@@ -4,6 +4,7 @@ const {
     resolveUserWorkspaceFolder,
 } = require("../out/src/utils/workspacePathUtils");
 const { shouldUseElectronRunAsNodeFlag } = require("../out/src/utils/runtimeUtils");
+const { inspectCliLoginOutput } = require("../out/src/utils/loginOutputUtils");
 
 assert.strictEqual(
     resolveUserWorkspaceFolder({ wucan: "code/wucan", wangchu: "code/wangchu" }, "wucan", "ignored"),
@@ -31,5 +32,23 @@ assert.strictEqual(resolveRemoteWorkspaceRelativePath("../outside", "/workspaces
 assert.strictEqual(shouldUseElectronRunAsNodeFlag("1.126.2"), true);
 assert.strictEqual(shouldUseElectronRunAsNodeFlag("1.127.0"), false);
 assert.strictEqual(shouldUseElectronRunAsNodeFlag("invalid"), false);
+
+assert.deepStrictEqual(inspectCliLoginOutput("login: "), {
+    failed: false,
+    requestsCookie: false,
+    requestsLogin: true,
+    succeeded: false,
+});
+assert.deepStrictEqual(inspectCliLoginOutput("login: wangchu\ncookie: "), {
+    failed: false,
+    requestsCookie: true,
+    requestsLogin: true,
+    succeeded: false,
+});
+assert.strictEqual(
+    inspectCliLoginOutput("Successfully cookie login" + " as wangchu").succeeded,
+    true,
+);
+assert.strictEqual(inspectCliLoginOutput("[ERROR] session expired").failed, true);
 
 console.log("workspace path tests passed");

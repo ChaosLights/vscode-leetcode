@@ -12,9 +12,10 @@
 - Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
 - The bundled CLI uses the Node.js runtime included with desktop VS Code; a separate system Node.js installation is not required.
 - Cookies are stored in each participant's local VS Code SecretStorage.
+- Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.4 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.4) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.5 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.5) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

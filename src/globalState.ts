@@ -5,6 +5,8 @@ import * as vscode from "vscode";
 
 const CookieKey = "leetcode-cookie";
 const UserStatusKey = "leetcode-user-status";
+const CliSessionVersionKey = "leetcode-cli-session-version";
+const CurrentCliSessionVersion = 1;
 
 export type UserDataType = {
     isSignedIn: boolean;
@@ -53,6 +55,14 @@ class GlobalState {
         return this._userStatus ?? this._state.get(UserStatusKey);
     }
 
+    public needsCliSessionMigration(): boolean {
+        return this._state.get<number>(CliSessionVersionKey) !== CurrentCliSessionVersion;
+    }
+
+    public async markCliSessionCurrent(): Promise<void> {
+        await this._state.update(CliSessionVersionKey, CurrentCliSessionVersion);
+    }
+
     public async removeCookie(): Promise<void> {
         this._cookie = undefined;
         await this._secrets.delete(CookieKey);
@@ -63,6 +73,7 @@ class GlobalState {
         await this.removeCookie();
         this._userStatus = undefined;
         await this._state.update(UserStatusKey, undefined);
+        await this._state.update(CliSessionVersionKey, undefined);
     }
 }
 

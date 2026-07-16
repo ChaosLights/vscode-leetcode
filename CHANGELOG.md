@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.19.5
+
+- Verify the securely stored cookie before restoring login instead of trusting a stale local CLI user record.
+- Clear account-specific problem caches when migrating or changing accounts, then automatically rebuild and retry a failed problem load once.
+- Persist login state only after the bundled CLI accepts the cookie, preventing half-signed-in Explorer state.
+- Detect an empty or unparseable problem list and return to the signed-out view instead of silently showing empty category folders.
+- Buffer interactive CLI prompts so split output chunks cannot stall cookie login, and suppress obsolete dependency warnings from the bundled CLI.
+
 ## 0.19.4
 
 - Add `leetcode.workspaceFolderByUser` so one checked-in workspace configuration can route each locally signed-in LeetCode account to a different shared folder.

@@ -86,6 +86,17 @@ class LeetCodeExecutor implements Disposable {
         return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "user", "-L"]);
     }
 
+    public async clearLoginSession(): Promise<void> {
+        const endpoint: string = workspace.getConfiguration("leetcode").get<string>("endpoint", Endpoint.LeetCode);
+        const appDirectory: string = endpoint === Endpoint.LeetCodeCN ? "leetcode.cn" : "leetcode";
+        const homeDirectory: string = process.env.HOME || process.env.USERPROFILE || os.homedir();
+        const cliDirectory: string = path.join(homeDirectory, ".lc", appDirectory);
+        await Promise.all([
+            fse.remove(path.join(cliDirectory, "user.json")),
+            fse.remove(path.join(cliDirectory, "cache", "problems.json")),
+        ]);
+    }
+
     public async listProblems(showLocked: boolean, needTranslation: boolean): Promise<string> {
         const cmd: string[] = [await this.getLeetCodeBinaryPath(), "list"];
         if (!needTranslation) {
@@ -287,7 +298,7 @@ class LeetCodeExecutor implements Disposable {
     private getSpawnOptions(runtime: INodeRuntime, options: cp.SpawnOptions): cp.SpawnOptions {
         return {
             ...options,
-            env: { ...options.env, ...runtime.env },
+            env: { ...options.env, ...runtime.env, NODE_NO_WARNINGS: "1" },
             shell: false,
         };
     }
