@@ -77,6 +77,8 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
             switch (element.id) {
                 case Category.All:
                     return explorerNodeManager.getAllNodes();
+                case Category.NeetCode150:
+                    return explorerNodeManager.getAllNeetCode150CategoryNodes();
                 case Category.Favorite:
                     return explorerNodeManager.getFavoriteNodes();
                 case Category.Difficulty:
@@ -124,7 +126,7 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
 
     private getSubCategoryTooltip(element: LeetCodeNode): string {
         // return '' unless it is a sub-category node
-        if (element.isProblem || element.id === "ROOT" || element.id in Category) {
+        if (element.isProblem || element.id === "ROOT" || element.id in Category || element.id === Category.NeetCode150) {
             return "";
         }
 

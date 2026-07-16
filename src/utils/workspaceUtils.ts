@@ -10,6 +10,70 @@ import { getWorkspaceConfiguration, getWorkspaceFolder } from "./settingUtils";
 import { showDirectorySelectDialog } from "./uiUtils";
 import * as wsl from "./wslUtils";
 
+export interface IActiveSolutionFile {
+    filePath: string;
+    dispose(): Promise<void>;
+}
+
+export function getSafeRelativePathSegments(relativePath: string): string[] {
+    const slashPath: string = relativePath.replace(/\\/g, "/");
+    const rawSegments: string[] = slashPath.split("/").filter((segment: string) => Boolean(segment));
+    if (
+        !slashPath ||
+        path.posix.isAbsolute(slashPath) ||
+        /^[a-z]:\//i.test(slashPath) ||
+        rawSegments.some((segment: string) => segment === "." || segment === "..")
+    ) {
+        throw new Error(`LeetCode filePath must stay inside the shared workspace: ${relativePath}`);
+    }
+    return rawSegments;
+}
+
+export async function uriExists(uri: vscode.Uri): Promise<boolean> {
+    try {
+        const stat: vscode.FileStat = await vscode.workspace.fs.stat(uri);
+        if (stat.type === vscode.FileType.Directory) {
+            throw new Error(`The configured LeetCode file path points to a directory: ${uri.toString(true)}`);
+        }
+        return true;
+    } catch (error) {
+        if ((error as { code?: string }).code === "FileNotFound") {
+            return false;
+        }
+        throw error;
+    }
+}
+
+export async function selectRemoteWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
+    const remoteFolders: vscode.WorkspaceFolder[] = (vscode.workspace.workspaceFolders || [])
+        .filter((folder: vscode.WorkspaceFolder) => folder.uri.scheme !== "file");
+    if (!remoteFolders.length) {
+        return undefined;
+    }
+    if (remoteFolders.length === 1) {
+        return remoteFolders[0];
+    }
+
+    const activeUri: vscode.Uri | undefined = vscode.window.activeTextEditor?.document.uri;
+    const activeFolder: vscode.WorkspaceFolder | undefined = activeUri
+        ? vscode.workspace.getWorkspaceFolder(activeUri)
+        : undefined;
+    if (activeFolder && activeFolder.uri.scheme !== "file") {
+        return activeFolder;
+    }
+
+    const picks: Array<IQuickItemEx<vscode.WorkspaceFolder>> = remoteFolders.map(
+        (folder: vscode.WorkspaceFolder): IQuickItemEx<vscode.WorkspaceFolder> => ({
+            label: folder.name,
+            description: folder.uri.toString(true),
+            value: folder,
+        }),
+    );
+    return (await vscode.window.showQuickPick(picks, {
+        placeHolder: "Select the shared workspace folder for the problem file",
+    }))?.value;
+}
+
 export async function selectWorkspaceFolder(): Promise<string> {
     let workspaceFolderSetting: string = getWorkspaceFolder();
     if (workspaceFolderSetting.trim() === "") {
@@ -75,6 +139,43 @@ export async function getActiveFilePath(uri?: vscode.Uri): Promise<string | unde
         return undefined;
     }
     return wsl.useWsl() ? wsl.toWslPath(textEditor.document.uri.fsPath) : textEditor.document.uri.fsPath;
+}
+
+export async function getActiveSolutionFile(uri?: vscode.Uri): Promise<IActiveSolutionFile | undefined> {
+    const document: vscode.TextDocument | undefined = uri
+        ? await vscode.workspace.openTextDocument(uri)
+        : vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+
+    if (!document) {
+        return undefined;
+    }
+
+    if (document.uri.scheme === "file") {
+        if (document.isDirty && !await document.save()) {
+            vscode.window.showWarningMessage("Please save the solution file first.");
+            return undefined;
+        }
+        const currentFilePath: string = document.uri.fsPath;
+        return {
+            filePath: wsl.useWsl() ? await wsl.toWslPath(currentFilePath) : currentFilePath,
+            dispose: async (): Promise<void> => undefined,
+        };
+    }
+
+    const tempFolder: string = await fse.mkdtemp(path.join(os.tmpdir(), "vscode-leetcode-"));
+    const extension: string = path.posix.extname(document.uri.path) || ".txt";
+    const tempFilePath: string = path.join(tempFolder, `solution${extension}`);
+    try {
+        await fse.writeFile(tempFilePath, document.getText(), "utf8");
+        const filePath: string = wsl.useWsl() ? await wsl.toWslPath(tempFilePath) : tempFilePath;
+        return {
+            filePath,
+            dispose: async (): Promise<void> => fse.remove(tempFolder),
+        };
+    } catch (error) {
+        await fse.remove(tempFolder);
+        throw error;
+    }
 }
 
 function isSubFolder(from: string, to: string): boolean {

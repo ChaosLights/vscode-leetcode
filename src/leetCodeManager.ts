@@ -34,25 +34,27 @@ class LeetCodeManager extends EventEmitter {
             this.currentUser = this.tryParseUserName(result);
             this.userStatus = UserStatus.SignedIn;
         } catch (error) {
-            this.currentUser = undefined;
-            this.userStatus = UserStatus.SignedOut;
-            globalState.removeAll();
+            if (!await this.restoreLoginFromStoredCookie()) {
+                this.currentUser = undefined;
+                this.userStatus = UserStatus.SignedOut;
+            }
         } finally {
             this.emit("statusChanged");
         }
     }
 
     private async updateUserStatusWithCookie(cookie: string): Promise<void> {
-        globalState.setCookie(cookie);
-        const data = await queryUserData();
-        globalState.setUserStatus(data);
-        await this.setCookieToCli(cookie, data.username);
-        if (data.username) {
-            vscode.window.showInformationMessage(`Successfully ${data.username}.`);
-            this.currentUser = data.username;
-            this.userStatus = UserStatus.SignedIn;
-            this.emit("statusChanged");
+        const data = await queryUserData(cookie);
+        if (!data || !data.isSignedIn || !data.username) {
+            throw new Error("The saved LeetCode cookie is invalid or expired.");
         }
+        await globalState.setCookie(cookie);
+        await globalState.setUserStatus(data);
+        await this.setCookieToCli(cookie, data.username);
+        vscode.window.showInformationMessage(`Successfully signed in as ${data.username}.`);
+        this.currentUser = data.username;
+        this.userStatus = UserStatus.SignedIn;
+        this.emit("statusChanged");
     }
 
     public async handleUriSignIn(uri: vscode.Uri): Promise<void> {
@@ -83,7 +85,10 @@ class LeetCodeManager extends EventEmitter {
                 s ? undefined : 'Cookie must not be empty',
         })
 
-        await this.updateUserStatusWithCookie(cookie || '')
+        if (!cookie) {
+            return
+        }
+        await this.updateUserStatusWithCookie(cookie)
     }
 
     public async signIn(): Promise<void> {
@@ -126,12 +131,13 @@ class LeetCodeManager extends EventEmitter {
         try {
             await leetCodeExecutor.signOut();
             vscode.window.showInformationMessage("Successfully signed out.");
+        } catch (error) {
+            leetCodeChannel.appendLine(`LeetCode CLI sign out failed: ${error.toString()}`);
+        } finally {
             this.currentUser = undefined;
             this.userStatus = UserStatus.SignedOut;
-            globalState.removeAll();
+            await globalState.removeAll();
             this.emit("statusChanged");
-        } catch (error) {
-            // swallow the error when sign out.
         }
     }
 
@@ -163,9 +169,23 @@ class LeetCodeManager extends EventEmitter {
         }
     }
 
-    public setCookieToCli(cookie: string, name: string): Promise<void> {
-        return new Promise(async (resolve: (res: void) => void, reject: (e: Error) => void) => {
-            const leetCodeBinaryPath: string = await leetCodeExecutor.getLeetCodeBinaryPath();
+    public async setCookieToCli(cookie: string, name: string): Promise<void> {
+        const leetCodeBinaryPath: string = await leetCodeExecutor.getLeetCodeBinaryPath();
+        return new Promise((resolve: (res: void) => void, reject: (e: Error) => void) => {
+            let settled: boolean = false;
+
+            const resolveOnce = (): void => {
+                if (!settled) {
+                    settled = true;
+                    resolve();
+                }
+            };
+            const rejectOnce = (error: Error): void => {
+                if (!settled) {
+                    settled = true;
+                    reject(error);
+                }
+            };
 
             const childProc: cp.ChildProcess = wsl.useWsl()
                 ? cp.spawn("wsl", [leetCodeExecutor.node, leetCodeBinaryPath, "user", loginArgsMapping.get("Cookie") ?? ""], {
@@ -182,10 +202,10 @@ class LeetCodeManager extends EventEmitter {
                 const successMatch: RegExpMatchArray | null = data.match(this.successRegex);
                 if (successMatch && successMatch[1]) {
                     childProc.stdin?.end();
-                    return resolve();
+                    return resolveOnce();
                 } else if (data.match(this.failRegex)) {
                     childProc.stdin?.end();
-                    return reject(new Error("Faile to login"));
+                    return rejectOnce(new Error("Failed to restore the LeetCode CLI login."));
                 } else if (data.match(/login: /)) {
                     childProc.stdin?.write(`${name}\n`);
                 } else if (data.match(/cookie: /)) {
@@ -195,8 +215,36 @@ class LeetCodeManager extends EventEmitter {
 
             childProc.stderr?.on("data", (data: string | Buffer) => leetCodeChannel.append(data.toString()));
 
-            childProc.on("error", reject);
+            childProc.on("error", rejectOnce);
+            childProc.on("close", (code: number | null) => {
+                if (!settled) {
+                    rejectOnce(new Error(`LeetCode CLI login exited before completion with code ${code}.`));
+                }
+            });
         });
+    }
+
+    private async restoreLoginFromStoredCookie(): Promise<boolean> {
+        const cookie: string | undefined = globalState.getCookie();
+        if (!cookie) {
+            return false;
+        }
+
+        try {
+            const data = await queryUserData();
+            if (!data || !data.isSignedIn || !data.username) {
+                return false;
+            }
+            await globalState.setUserStatus(data);
+            await this.setCookieToCli(cookie, data.username);
+            this.currentUser = data.username;
+            this.userStatus = UserStatus.SignedIn;
+            leetCodeChannel.appendLine(`Restored LeetCode login for ${data.username} from secure storage.`);
+            return true;
+        } catch (error) {
+            leetCodeChannel.appendLine(`Unable to restore the saved LeetCode login: ${error.toString()}`);
+            return false;
+        }
     }
 }
 

@@ -17,12 +17,7 @@ export function getWorkspaceFolder(): string {
 }
 
 export function getEditorShortcuts(): string[] {
-    return getWorkspaceConfiguration().get<string[]>("editor.shortcuts", ["submit", "test"]);
-}
-
-export function hasStarShortcut(): boolean {
-    const shortcuts: string[] = getWorkspaceConfiguration().get<string[]>("editor.shortcuts", ["submit", "test"]);
-    return shortcuts.indexOf("star") >= 0;
+    return getWorkspaceConfiguration().get<string[]>("editor.shortcuts", ["submit", "test", "solution", "description"]);
 }
 
 export function shouldUseEndpointTranslation(): boolean {

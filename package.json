@@ -1,20 +1,23 @@
 {
     "name": "vscode-leetcode",
-    "displayName": "LeetCode",
-    "description": "Solve LeetCode problems in VS Code",
-    "version": "0.18.4",
-    "author": "LeetCode",
+    "displayName": "LeetCode Live Share",
+    "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
+    "version": "0.19.0",
+    "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
     "icon": "resources/LeetCode.png",
     "engines": {
         "vscode": "^1.57.0"
     },
+    "extensionKind": [
+        "ui"
+    ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/LeetCode-OpenSource/vscode-leetcode"
+        "url": "https://github.com/ChaosLights/vscode-leetcode"
     },
-    "homepage": "https://github.com/LeetCode-OpenSource/vscode-leetcode/blob/master/README.md",
+    "homepage": "https://github.com/ChaosLights/vscode-leetcode/blob/master/README.md",
     "categories": [
         "Other",
         "Snippets"
@@ -26,6 +29,7 @@
     ],
     "preview": true,
     "activationEvents": [
+        "onStartupFinished",
         "onCommand:leetcode.toggleLeetCodeCn",
         "onCommand:leetcode.signin",
         "onCommand:leetcode.signout",
@@ -39,6 +43,7 @@
         "onCommand:leetcode.submitSolution",
         "onCommand:leetcode.switchDefaultLanguage",
         "onCommand:leetcode.problems.sort",
+        "onCommand:leetcode.showEditorActions",
         "onView:leetCodeExplorer"
     ],
     "main": "./out/src/extension",
@@ -141,6 +146,12 @@
                 "title": "Sort Problems",
                 "category": "LeetCode",
                 "icon": "$(sort-precedence)"
+            },
+            {
+                "command": "leetcode.showEditorActions",
+                "title": "Actions for Current Problem",
+                "category": "LeetCode",
+                "icon": "$(rocket)"
             }
         ],
         "viewsContainers": {
@@ -198,6 +209,13 @@
                     "group": "overflow@3"
                 }
             ],
+            "editor/title": [
+                {
+                    "command": "leetcode.showEditorActions",
+                    "when": "leetcode.activeSolution",
+                    "group": "navigation@100"
+                }
+            ],
             "view/item/context": [
                 {
                     "command": "leetcode.previewProblem",
@@ -232,11 +250,11 @@
                 },
                 {
                     "command": "leetcode.showSolution",
-                    "when": "never"
+                    "when": "leetcode.activeSolution"
                 },
                 {
                     "command": "leetcode.previewProblem",
-                    "when": "never"
+                    "when": "leetcode.activeSolution"
                 },
                 {
                     "command": "leetcode.addFavorite",
@@ -261,7 +279,8 @@
             ],
             "editor/context": [
                 {
-                    "submenu": "leetcode.editorAction"
+                    "submenu": "leetcode.editorAction",
+                    "when": "leetcode.activeSolution"
                 }
             ],
             "leetcode.editorAction": [
@@ -649,7 +668,9 @@
                         "type": "array",
                         "default": [
                             "submit",
-                            "test"
+                            "test",
+                            "solution",
+                            "description"
                         ],
                         "scope": "application",
                         "items": {
@@ -669,7 +690,7 @@
                                 "Show the problem description page."
                             ]
                         },
-                        "description": "Customize the shortcuts in editors."
+                        "description": "Customize the local editor action menu. These actions are not remoted through Live Share."
                     },
                     "leetcode.enableSideMode": {
                         "type": "boolean",
@@ -712,11 +733,10 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "lint": "tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "build": "vsce package",
-        "vs-publish": "vsce publish"
+        "compile": "node ./node_modules/typescript/bin/tsc -p ./",
+        "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
+        "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
+        "build": "npx --yes @vscode/vsce@3.9.1 package"
     },
     "devDependencies": {
         "@types/fs-extra": "^9.0.11",

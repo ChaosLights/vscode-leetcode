@@ -22,15 +22,19 @@ export function genFileName(node: IProblem, language: string): string {
 
 export async function getNodeIdFromFile(fsPath: string): Promise<string> {
     const fileContent: string = await fse.readFile(fsPath, "utf8");
-    let id: string = "";
-    const matchResults: RegExpMatchArray | null = fileContent.match(/@lc.+id=(.+?) /);
-    if (matchResults && matchResults.length === 2) {
-        id = matchResults[1];
-    }
+    let id: string = getNodeIdFromContent(fileContent);
     // Try to get id from file name if getting from comments failed
     if (!id) {
         id = path.basename(fsPath).split(".")[0];
     }
 
     return id;
+}
+
+export function getNodeIdFromContent(fileContent: string): string {
+    const matchResults: RegExpMatchArray | null = fileContent.match(/@lc.+id=(.+?) /);
+    if (matchResults && matchResults.length === 2) {
+        return matchResults[1];
+    }
+    return "";
 }

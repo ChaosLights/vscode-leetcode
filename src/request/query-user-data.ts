@@ -14,12 +14,12 @@ const graphqlStr = `
     }
 `;
 
-export const queryUserData = async (): Promise<UserDataType> => {
+export const queryUserData = async (cookie?: string): Promise<UserDataType> => {
     return LcAxios(getUrl("userGraphql"), {
         method: "POST",
         data: {
             query: graphqlStr,
             variables: {},
         },
-    }).then((res) => res.data.data.userStatus);
+    }, cookie).then((res) => res.data.data.userStatus);
 };

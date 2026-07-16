@@ -15,40 +15,54 @@ export type UserDataType = {
 };
 
 class GlobalState {
-    private context: vscode.ExtensionContext;
     private _state: vscode.Memento;
-    private _cookie: string;
-    private _userStatus: UserDataType;
+    private _secrets: vscode.SecretStorage;
+    private _cookie: string | undefined;
+    private _userStatus: UserDataType | undefined;
 
-    public initialize(context: vscode.ExtensionContext): void {
-        this.context = context;
-        this._state = this.context.globalState;
+    public async initialize(context: vscode.ExtensionContext): Promise<void> {
+        this._state = context.globalState;
+        this._secrets = context.secrets;
+        this._cookie = await this._secrets.get(CookieKey);
+
+        const legacyCookie: string | undefined = this._state.get<string>(CookieKey);
+        if (!this._cookie && legacyCookie) {
+            this._cookie = legacyCookie;
+            await this._secrets.store(CookieKey, legacyCookie);
+        }
+        if (legacyCookie) {
+            await this._state.update(CookieKey, undefined);
+        }
     }
 
-    public setCookie(cookie: string): any {
+    public async setCookie(cookie: string): Promise<void> {
         this._cookie = cookie;
-        return this._state.update(CookieKey, this._cookie);
-    }
-    public getCookie(): string | undefined {
-        return this._cookie ?? this._state.get(CookieKey);
+        await this._secrets.store(CookieKey, cookie);
     }
 
-    public setUserStatus(userStatus: UserDataType): any {
+    public getCookie(): string | undefined {
+        return this._cookie;
+    }
+
+    public async setUserStatus(userStatus: UserDataType): Promise<void> {
         this._userStatus = userStatus;
-        return this._state.update(UserStatusKey, this._userStatus);
+        await this._state.update(UserStatusKey, this._userStatus);
     }
 
     public getUserStatus(): UserDataType | undefined {
         return this._userStatus ?? this._state.get(UserStatusKey);
     }
 
-    public removeCookie(): void {
-        this._state.update(CookieKey, undefined);
+    public async removeCookie(): Promise<void> {
+        this._cookie = undefined;
+        await this._secrets.delete(CookieKey);
+        await this._state.update(CookieKey, undefined);
     }
 
-    public removeAll(): void {
-        this._state.update(CookieKey, undefined);
-        this._state.update(UserStatusKey, undefined);
+    public async removeAll(): Promise<void> {
+        await this.removeCookie();
+        this._userStatus = undefined;
+        await this._state.update(UserStatusKey, undefined);
     }
 }
 

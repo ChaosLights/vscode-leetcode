@@ -8,6 +8,7 @@ import { getSortingStrategy } from "../commands/plugin";
 import { Category, defaultProblem, ProblemState, SortingStrategy } from "../shared";
 import { shouldHideSolvedProblem } from "../utils/settingUtils";
 import { LeetCodeNode } from "./LeetCodeNode";
+import { INeetCode150Category, NEETCODE_150_CATEGORIES } from "./neetcode150";
 
 class ExplorerNodeManager implements Disposable {
     private explorerNodeMap: Map<string, LeetCodeNode> = new Map<string, LeetCodeNode>();
@@ -36,6 +37,10 @@ class ExplorerNodeManager implements Disposable {
             new LeetCodeNode(Object.assign({}, defaultProblem, {
                 id: Category.All,
                 name: Category.All,
+            }), false),
+            new LeetCodeNode(Object.assign({}, defaultProblem, {
+                id: Category.NeetCode150,
+                name: Category.NeetCode150,
             }), false),
             new LeetCodeNode(Object.assign({}, defaultProblem, {
                 id: Category.Difficulty,
@@ -82,6 +87,15 @@ class ExplorerNodeManager implements Disposable {
         return res;
     }
 
+    public getAllNeetCode150CategoryNodes(): LeetCodeNode[] {
+        return NEETCODE_150_CATEGORIES.map((category: INeetCode150Category) =>
+            new LeetCodeNode(Object.assign({}, defaultProblem, {
+                id: `${Category.NeetCode150}.${category.name}`,
+                name: category.name,
+            }), false),
+        );
+    }
+
     public getAllCompanyNodes(): LeetCodeNode[] {
         const res: LeetCodeNode[] = [];
         for (const company of this.companySet.values()) {
@@ -123,6 +137,19 @@ class ExplorerNodeManager implements Disposable {
     public getChildrenNodesById(id: string): LeetCodeNode[] {
         // The sub-category node's id is named as {Category.SubName}
         const metaInfo: string[] = id.split(".");
+        if (metaInfo[0] === Category.NeetCode150) {
+            const categoryName: string = metaInfo.slice(1).join(".");
+            const category: INeetCode150Category | undefined = NEETCODE_150_CATEGORIES.find(
+                (item: INeetCode150Category) => item.name === categoryName,
+            );
+            if (!category) {
+                return [];
+            }
+            const nodes: LeetCodeNode[] = category.problemIds
+                .map((problemId: string) => this.explorerNodeMap.get(problemId))
+                .filter((node: LeetCodeNode | undefined): node is LeetCodeNode => Boolean(node));
+            return this.applySortingStrategy(nodes);
+        }
         const res: LeetCodeNode[] = [];
         for (const node of this.explorerNodeMap.values()) {
             switch (metaInfo[0]) {

@@ -2,6 +2,18 @@
 
 > Solve LeetCode problems in VS Code
 
+> This fork is maintained for desktop VS Code + Remote/Codespaces + Live Share pairing. Each participant runs the extension in their own local UI extension host and uses an isolated LeetCode account. See [the Live Share design and installation guide](docs/LIVE_SHARE_zh-CN.md).
+
+## Live Share fork
+
+- Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
+- Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a Live Share guest sends a versioned request to the host, who approves it and writes through the host workspace URI. Guest-local paths are never used.
+- Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
+- Cookies are stored in each participant's local VS Code SecretStorage.
+- The Explorer includes a fixed, verified NeetCode 150 category.
+
+Install the pinned VSIX from the [v0.19.0 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.0) in a local VS Code window, not in the Codespace extension host.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
 </p>
@@ -83,6 +95,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 
 - Directly click on the problem or right click the problem in the `LeetCode Explorer` and select `Preview Problem` to see the problem description.
 - Select `Show Problem` to directly open the file with the problem description.
+- The Explorer includes a fixed `NeetCode 150` category with the official 18 topic groups. It filters LeetCode problems and does not change Premium access.
 
   > Note：You can specify the path of the workspace folder to store the problem files by updating the setting `leetcode.workspaceFolder`. The default value is：**$HOME/.leetcode/**.
 
@@ -139,7 +152,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 | `leetcode.workspaceFolder`        | Specify the path of the workspace folder to store the problem files.                                                                                                                                                                                          | `""`               |
 | `leetcode.filePath`               | Specify the relative path under the workspace and the file name to save the problem files. More details can be found [here](https://github.com/LeetCode-OpenSource/vscode-leetcode/wiki/Customize-the-Relative-Folder-and-the-File-Name-of-the-Problem-File). |                    |
 | `leetcode.enableStatusBar`        | Specify whether the LeetCode status bar will be shown or not.                                                                                                                                                                                                 | `true`             |
-| `leetcode.editor.shortcuts`       | Specify the customized shortcuts in editors. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                                    | `["submit, test"]` |
+| `leetcode.editor.shortcuts`       | Choose actions in the local editor action menu. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                                | `["submit", "test", "solution", "description"]` |
 | `leetcode.enableSideMode`         | Specify whether `preview`, `solution` and `submission` tab should be grouped into the second editor column when solving a problem.                                                                                                                            | `true`             |
 | `leetcode.nodePath`               | Specify the `Node.js` executable path. for example, C:\Program Files\nodejs\node.exe                                                                                                                                                                          | `node`             |
 | `leetcode.showCommentDescription` | Specify whether to include the problem description in the comments                                                                                                                                                                                            | `false`            |

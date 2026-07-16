@@ -12,39 +12,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js environment
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
-          node-version: 14
+          node-version: 20
+          cache: npm
 
       - name: Install Node.js modules
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
 
-      - name: VSCE Packge
-        run: npx vsce package
+      - name: Compile
+        run: npm run compile
+
+      - name: VSCE Package
+        run: npx --yes @vscode/vsce@3.9.1 package
 
   windows:
     name: Windows
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js environment
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
-          node-version: 14
+          node-version: 20
+          cache: npm
 
       - name: Install Node.js modules
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
 
-      - name: VSCE Packge
-        run: npx vsce package
+      - name: Compile
+        run: npm run compile
+
+      - name: VSCE Package
+        run: npx --yes @vscode/vsce@3.9.1 package

@@ -7,11 +7,12 @@ import * as unescapeJS from "unescape-js";
 import * as vscode from "vscode";
 import { explorerNodeManager } from "../explorer/explorerNodeManager";
 import { LeetCodeNode } from "../explorer/LeetCodeNode";
+import { leetCodeTreeDataProvider } from "../explorer/LeetCodeTreeDataProvider";
 import { leetCodeChannel } from "../leetCodeChannel";
 import { leetCodeExecutor } from "../leetCodeExecutor";
 import { leetCodeManager } from "../leetCodeManager";
 import { Endpoint, IProblem, IQuickItemEx, languages, PREMIUM_URL_CN, PREMIUM_URL_GLOBAL, ProblemState } from "../shared";
-import { genFileExt, genFileName, getNodeIdFromFile } from "../utils/problemUtils";
+import { genFileExt, genFileName, getNodeIdFromContent } from "../utils/problemUtils";
 import * as settingUtils from "../utils/settingUtils";
 import { IDescriptionConfiguration } from "../utils/settingUtils";
 import {
@@ -23,36 +24,52 @@ import {
     promptForSignIn,
     promptHintMessage,
 } from "../utils/uiUtils";
-import { getActiveFilePath, selectWorkspaceFolder } from "../utils/workspaceUtils";
+import {
+    getSafeRelativePathSegments,
+    selectRemoteWorkspaceFolder,
+    selectWorkspaceFolder,
+    uriExists,
+} from "../utils/workspaceUtils";
 import * as wsl from "../utils/wslUtils";
 import { leetCodePreviewProvider } from "../webview/leetCodePreviewProvider";
 import { leetCodeSolutionProvider } from "../webview/leetCodeSolutionProvider";
 import * as list from "./list";
 import { getLeetCodeEndpoint } from "./plugin";
 import { globalState } from "../globalState";
+import { liveShareFileService } from "../liveshare/LiveShareFileService";
 
-export async function previewProblem(input: IProblem | vscode.Uri, isSideMode: boolean = false): Promise<void> {
+export async function previewProblem(input?: IProblem | vscode.Uri, isSideMode: boolean = false): Promise<void> {
     let node: IProblem;
+    const problemInput: IProblem | vscode.Uri | undefined = input || vscode.window.activeTextEditor?.document.uri;
 
-    if (input instanceof vscode.Uri) {
-        const activeFilePath: string = input.fsPath;
-        const id: string = await getNodeIdFromFile(activeFilePath);
+    if (!problemInput) {
+        vscode.window.showErrorMessage("Open a generated LeetCode solution file first.");
+        return;
+    }
+
+    if (problemInput instanceof vscode.Uri) {
+        const document: vscode.TextDocument = await vscode.workspace.openTextDocument(problemInput);
+        const id: string = getNodeIdFromContent(document.getText());
         if (!id) {
-            vscode.window.showErrorMessage(`Failed to resolve the problem id from file: ${activeFilePath}.`);
+            vscode.window.showErrorMessage(`Failed to resolve the problem id from document: ${problemInput.toString()}.`);
             return;
         }
-        const cachedNode: IProblem | undefined = explorerNodeManager.getNodeById(id);
+        let cachedNode: IProblem | undefined = explorerNodeManager.getNodeById(id);
+        if (!cachedNode && leetCodeManager.getUser()) {
+            await leetCodeTreeDataProvider.refresh();
+            cachedNode = explorerNodeManager.getNodeById(id);
+        }
         if (!cachedNode) {
             vscode.window.showErrorMessage(`Failed to resolve the problem with id: ${id}.`);
             return;
         }
         node = cachedNode;
-        // Move the preview page aside if it's triggered from Code Lens
+        // Move the preview page aside when triggered from an editor action.
         isSideMode = true;
     } else {
-        node = input;
+        node = problemInput;
         const { isPremium } = globalState.getUserStatus() ?? {};
-        if (input.locked && !isPremium) {
+        if (problemInput.locked && !isPremium) {
             const url = getLeetCodeEndpoint() === Endpoint.LeetCode ? PREMIUM_URL_GLOBAL : PREMIUM_URL_CN;
             openUrl(url);
             return;
@@ -92,17 +109,16 @@ export async function searchProblem(): Promise<void> {
     await showProblemInternal(choice.value);
 }
 
-export async function showSolution(input: LeetCodeNode | vscode.Uri): Promise<void> {
+export async function showSolution(input?: LeetCodeNode | vscode.Uri): Promise<void> {
     let problemInput: string | undefined;
-    if (input instanceof LeetCodeNode) {
+    const source: LeetCodeNode | vscode.Uri | undefined = input || vscode.window.activeTextEditor?.document.uri;
+    if (source instanceof LeetCodeNode) {
         // Triggerred from explorer
-        problemInput = input.id;
-    } else if (input instanceof vscode.Uri) {
-        // Triggerred from Code Lens/context menu
-        problemInput = `"${input.fsPath}"`;
-    } else if (!input) {
-        // Triggerred from command
-        problemInput = await getActiveFilePath();
+        problemInput = source.id;
+    } else if (source instanceof vscode.Uri) {
+        // Triggered from the local editor action/context menu.
+        const document: vscode.TextDocument = await vscode.workspace.openTextDocument(source);
+        problemInput = getNodeIdFromContent(document.getText());
     }
 
     if (!problemInput) {
@@ -163,11 +179,6 @@ async function showProblemInternal(node: IProblem): Promise<void> {
         }
 
         const leetCodeConfig: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("leetcode");
-        const workspaceFolder: string = await selectWorkspaceFolder();
-        if (!workspaceFolder) {
-            return;
-        }
-
         const fileFolder: string = leetCodeConfig
             .get<string>(`filePath.${language}.folder`, leetCodeConfig.get<string>(`filePath.default.folder`, ""))
             .trim();
@@ -175,24 +186,46 @@ async function showProblemInternal(node: IProblem): Promise<void> {
             .get<string>(`filePath.${language}.filename`, leetCodeConfig.get<string>(`filePath.default.filename`) || genFileName(node, language))
             .trim();
 
-        let finalPath: string = path.join(workspaceFolder, fileFolder, fileName);
+        const descriptionConfig: IDescriptionConfiguration = settingUtils.getDescriptionConfiguration();
+        const needTranslation: boolean = settingUtils.shouldUseEndpointTranslation();
+        const hasRemoteWorkspace: boolean = (vscode.workspace.workspaceFolders || [])
+            .some((folder: vscode.WorkspaceFolder) => folder.uri.scheme !== "file");
+        let finalUri: vscode.Uri;
 
-        if (finalPath) {
+        if (hasRemoteWorkspace) {
+            const remoteFolder: vscode.WorkspaceFolder | undefined = await selectRemoteWorkspaceFolder();
+            if (!remoteFolder) {
+                return;
+            }
+            finalUri = await createRemoteProblemFile(
+                remoteFolder.uri,
+                fileFolder,
+                fileName,
+                node,
+                language,
+                descriptionConfig,
+                needTranslation,
+            );
+        } else {
+            const workspaceFolder: string = await selectWorkspaceFolder();
+            if (!workspaceFolder) {
+                return;
+            }
+
+            let finalPath: string = path.join(workspaceFolder, fileFolder, fileName);
             finalPath = await resolveRelativePath(finalPath, node, language);
             if (!finalPath) {
                 leetCodeChannel.appendLine("Showing problem canceled by user.");
                 return;
             }
+
+            finalPath = wsl.useWsl() ? await wsl.toWinPath(finalPath) : finalPath;
+            await leetCodeExecutor.showProblem(node, language, finalPath, descriptionConfig.showInComment, needTranslation);
+            finalUri = vscode.Uri.file(finalPath);
         }
 
-        finalPath = wsl.useWsl() ? await wsl.toWinPath(finalPath) : finalPath;
-
-        const descriptionConfig: IDescriptionConfiguration = settingUtils.getDescriptionConfiguration();
-        const needTranslation: boolean = settingUtils.shouldUseEndpointTranslation();
-
-        await leetCodeExecutor.showProblem(node, language, finalPath, descriptionConfig.showInComment, needTranslation);
         const promises: any[] = [
-            vscode.window.showTextDocument(vscode.Uri.file(finalPath), {
+            vscode.window.showTextDocument(finalUri, {
                 preview: false,
                 viewColumn: vscode.ViewColumn.One,
             }),
@@ -213,6 +246,50 @@ async function showProblemInternal(node: IProblem): Promise<void> {
     }
 }
 
+async function createRemoteProblemFile(
+    workspaceUri: vscode.Uri,
+    configuredFolder: string,
+    configuredFileName: string,
+    node: IProblem,
+    language: string,
+    descriptionConfig: IDescriptionConfiguration,
+    needTranslation: boolean,
+): Promise<vscode.Uri> {
+    const configuredPath: string = [configuredFolder, configuredFileName]
+        .filter((segment: string) => Boolean(segment))
+        .join("/");
+    const resolvedPath: string = await resolveRelativePath(configuredPath, node, language);
+    const pathSegments: string[] = getSafeRelativePathSegments(resolvedPath);
+    const finalUri: vscode.Uri = vscode.Uri.joinPath(workspaceUri, ...pathSegments);
+
+    if (workspaceUri.scheme === "vsls") {
+        const workspaceFolder: vscode.WorkspaceFolder | undefined = vscode.workspace.getWorkspaceFolder(finalUri);
+        if (!workspaceFolder) {
+            throw new Error(`Unable to resolve the shared workspace for: ${finalUri.toString(true)}`);
+        }
+        const codeTemplate: string = await leetCodeExecutor.getProblemTemplate(
+            node,
+            language,
+            descriptionConfig.showInComment,
+            needTranslation,
+        );
+        await liveShareFileService.createProblemFile(workspaceFolder, resolvedPath, codeTemplate);
+    } else if (!await uriExists(finalUri)) {
+        const parentSegments: string[] = pathSegments.slice(0, -1);
+        if (parentSegments.length) {
+            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(workspaceUri, ...parentSegments));
+        }
+        const codeTemplate: string = await leetCodeExecutor.getProblemTemplate(
+            node,
+            language,
+            descriptionConfig.showInComment,
+            needTranslation,
+        );
+        await vscode.workspace.fs.writeFile(finalUri, Buffer.from(codeTemplate, "utf8"));
+    }
+
+    return finalUri;
+}
 async function showDescriptionView(node: IProblem): Promise<void> {
     return previewProblem(node, vscode.workspace.getConfiguration("leetcode").get<boolean>("enableSideMode", true));
 }

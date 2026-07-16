@@ -1,4 +1,12 @@
 # Change Log
+
+## 0.19.0
+
+- Run the account-bound extension in each participant's local UI extension host.
+- Support isolated local LeetCode accounts for Remote/Codespaces and Live Share documents.
+- Create Explorer problem files through remote URI-aware `workspace.fs` APIs, with an approved host-side RPC for Live Share guests.
+- Replace remoted CodeLens with a local editor action menu to eliminate duplicate or host-bound commands.
+- Persist cookies in VS Code SecretStorage and add a verified NeetCode 150 Explorer category.
 All notable changes to the "leetcode" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
