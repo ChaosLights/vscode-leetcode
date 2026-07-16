@@ -3,6 +3,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { Worker } = require("worker_threads");
+const {
+    configureLegacyListCompatibility,
+    parseLegacyCategoryProblems,
+} = require("../out/src/utils/legacyCliCompatibility");
 const { collectWorkerOutput } = require("../out/src/utils/workerUtils");
 
 function runWorker(argv, home) {
@@ -16,6 +20,58 @@ function runWorker(argv, home) {
 }
 
 (async () => {
+    const parsedProblems = parseLegacyCategoryProblems({
+        category_slug: "algorithms",
+        stat_status_pairs: [{
+            difficulty: { level: 2 },
+            is_favor: true,
+            paid_only: false,
+            stat: {
+                frontend_question_id: 42,
+                question__hide: false,
+                question__title: "Worker Compatibility",
+                question__title_slug: "worker-compatibility",
+                question_id: 4242,
+                total_acs: 3,
+                total_submitted: 4,
+            },
+            status: "ac",
+        }],
+        user_name: "",
+    }, "https://leetcode.com/problems/$slug/description/", (level) => ["", "Easy", "Medium", "Hard"][level]);
+    assert.strictEqual(parsedProblems.length, 1);
+    assert.deepStrictEqual(parsedProblems[0], {
+        category: "algorithms",
+        fid: 42,
+        id: 4242,
+        level: "Medium",
+        link: "https://leetcode.com/problems/worker-compatibility/description/",
+        locked: false,
+        name: "Worker Compatibility",
+        percent: 75,
+        slug: "worker-compatibility",
+        starred: true,
+        state: "ac",
+    });
+
+    const queueDiagnostics = [];
+    const cliRoot = path.resolve("node_modules/vsc-leetcode-cli");
+    configureLegacyListCompatibility(cliRoot, (message) => queueDiagnostics.push(message));
+    const Queue = require(path.join(cliRoot, "lib", "queue"));
+    const completedTasks = [];
+    await new Promise((resolve, reject) => {
+        const queue = new Queue(["first", "second", "third"], {}, (task, _queue, callback) => {
+            setTimeout(() => {
+                completedTasks.push(task);
+                callback();
+            }, 0);
+        });
+        queue.run(2, (error) => error ? reject(error) : resolve());
+    });
+    assert.deepStrictEqual(completedTasks.sort(), ["first", "second", "third"]);
+    assert.ok(queueDiagnostics.some((line) => line === "queue start: tasks=3, concurrency=2"));
+    assert.ok(queueDiagnostics.some((line) => line === "queue done: error=none"));
+
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-leetcode-worker-"));
     try {
         const help = await runWorker(["--help"], home);
@@ -76,6 +132,7 @@ function runWorker(argv, home) {
         assert.ok(Buffer.byteLength(largeList.stdout) > 500000);
         assert.match(largeList.stdout, /Worker Output 6000/);
         assert.match(largeList.stdout, /Worker Output 1\s+Easy/);
+        assert.match(largeList.stderr, /List compatibility: problem cache hit: count=6000/);
         console.log("CLI worker tests passed");
     } finally {
         fs.rmSync(home, { force: true, recursive: true });

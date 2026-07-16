@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.9",
+    "version": "0.19.10",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -765,6 +765,7 @@
         "highlight.js": "^10.7.2",
         "lodash": "^4.17.21",
         "markdown-it": "^8.4.2",
+        "request": "^2.88.0",
         "require-from-string": "^2.0.2",
         "unescape-js": "^1.1.4",
         "vsc-leetcode-cli": "2.8.1"

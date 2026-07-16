@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.10
+
+- Start and advance the legacy CLI problem-category queue directly instead of relying on its obsolete `setImmediate` scheduling inside an Electron worker.
+- Add cookie-safe list diagnostics for the problem cache and each category request so an empty result can no longer hide which stage stopped.
+
 ## 0.19.9
 
 - Wait for the CLI worker's stdout and stderr streams to finish draining before accepting its exit result, preventing large problem lists from becoming an empty result on Windows.
