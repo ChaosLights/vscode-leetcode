@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.6
+
+- Accept a verified cookie when the legacy CLI consumes both prompts and exits successfully but omits its optional success text under Node.js 24.
+- Include non-secret prompt-state diagnostics if the CLI exits before consuming the cookie.
+
 ## 0.19.5
 
 - Verify the securely stored cookie before restoring login instead of trusting a stale local CLI user record.

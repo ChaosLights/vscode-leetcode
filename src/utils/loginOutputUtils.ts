@@ -16,3 +16,11 @@ export function inspectCliLoginOutput(output: string): ICliLoginOutputState {
         succeeded: /Successfully .*login as /i.test(output),
     };
 }
+
+export function didCliLoginSucceed(
+    exitCode: number | null,
+    state: ICliLoginOutputState,
+    sentCookie: boolean,
+): boolean {
+    return exitCode === 0 && !state.failed && (state.succeeded || sentCookie);
+}

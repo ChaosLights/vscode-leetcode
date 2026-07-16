@@ -10,7 +10,7 @@ import { leetCodeChannel } from "./leetCodeChannel";
 import { leetCodeExecutor } from "./leetCodeExecutor";
 import { queryUserData } from "./request/query-user-data";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
-import { ICliLoginOutputState, inspectCliLoginOutput } from "./utils/loginOutputUtils";
+import { didCliLoginSucceed, ICliLoginOutputState, inspectCliLoginOutput } from "./utils/loginOutputUtils";
 import { parseQuery } from "./utils/toolUtils";
 import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils";
 
@@ -214,10 +214,18 @@ class LeetCodeManager extends EventEmitter {
             childProc.on("error", rejectOnce);
             childProc.on("close", (code: number | null) => {
                 const state: ICliLoginOutputState = inspectCliLoginOutput(output);
-                if (code === 0 && state.succeeded) {
+                if (didCliLoginSucceed(code, state, sentCookie)) {
+                    if (!state.succeeded) {
+                        leetCodeChannel.appendLine(
+                            "LeetCode CLI accepted the verified cookie without printing its legacy success message.",
+                        );
+                    }
                     resolveOnce();
                 } else {
-                    rejectOnce(new Error(`LeetCode CLI login exited before completion with code ${code}.`));
+                    rejectOnce(new Error(
+                        `LeetCode CLI login exited before completion with code ${code} ` +
+                        `(login prompt: ${sentLogin}, cookie prompt: ${sentCookie}, success text: ${state.succeeded}).`,
+                    ));
                 }
             });
         });
