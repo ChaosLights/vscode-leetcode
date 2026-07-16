@@ -7,12 +7,12 @@
 ## Live Share fork
 
 - Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
-- Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a Live Share guest sends a versioned request to the host, who approves it and writes through the host workspace URI. Guest-local paths are never used.
+- Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a read/write Live Share guest sends a versioned request that the host writes immediately through the host workspace URI, replacing an existing file at the same path. Guest-local paths are never used.
 - Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
 - Cookies are stored in each participant's local VS Code SecretStorage.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.1 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.1) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.2 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.2) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

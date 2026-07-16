@@ -29,21 +29,6 @@ export function getSafeRelativePathSegments(relativePath: string): string[] {
     return rawSegments;
 }
 
-export async function uriExists(uri: vscode.Uri): Promise<boolean> {
-    try {
-        const stat: vscode.FileStat = await vscode.workspace.fs.stat(uri);
-        if (stat.type === vscode.FileType.Directory) {
-            throw new Error(`The configured LeetCode file path points to a directory: ${uri.toString(true)}`);
-        }
-        return true;
-    } catch (error) {
-        if ((error as { code?: string }).code === "FileNotFound") {
-            return false;
-        }
-        throw error;
-    }
-}
-
 export async function selectRemoteWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
     const remoteFolders: vscode.WorkspaceFolder[] = (vscode.workspace.workspaceFolders || [])
         .filter((folder: vscode.WorkspaceFolder) => folder.uri.scheme !== "file");

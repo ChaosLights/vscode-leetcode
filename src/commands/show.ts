@@ -28,7 +28,6 @@ import {
     getSafeRelativePathSegments,
     selectRemoteWorkspaceFolder,
     selectWorkspaceFolder,
-    uriExists,
 } from "../utils/workspaceUtils";
 import * as wsl from "../utils/wslUtils";
 import { leetCodePreviewProvider } from "../webview/leetCodePreviewProvider";
@@ -274,7 +273,7 @@ async function createRemoteProblemFile(
             needTranslation,
         );
         await liveShareFileService.createProblemFile(workspaceFolder, resolvedPath, codeTemplate);
-    } else if (!await uriExists(finalUri)) {
+    } else {
         const parentSegments: string[] = pathSegments.slice(0, -1);
         if (parentSegments.length) {
             await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(workspaceUri, ...parentSegments));

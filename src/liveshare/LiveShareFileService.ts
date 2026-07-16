@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 import * as vscode from "vscode";
-import { getSafeRelativePathSegments, uriExists } from "../utils/workspaceUtils";
+import { getSafeRelativePathSegments } from "../utils/workspaceUtils";
 import {
     getLiveShareApi,
     ILiveShareApi,
@@ -15,7 +15,6 @@ import {
 
 const serviceName: string = "problem-files-v1";
 const createRequestName: string = "createProblemFile";
-const maxTemplateBytes: number = 2 * 1024 * 1024;
 
 interface ICreateProblemRequest {
     protocol: 1;
@@ -101,30 +100,11 @@ class LiveShareFileService implements vscode.Disposable {
         const pathSegments: string[] = getSafeRelativePathSegments(request.relativePath);
         const finalUri: vscode.Uri = vscode.Uri.joinPath(workspaceFolder.uri, ...pathSegments);
 
-        if (await uriExists(finalUri)) {
-            return { created: false, relativePath: request.relativePath };
-        }
-
         const hasWritableGuest: boolean = this.api.peers.some(
             (peer: ILiveSharePeer) => peer.role === LiveShareRole.Guest && peer.access >= LiveShareAccess.ReadWrite,
         );
         if (!hasWritableGuest) {
             throw new Error("The Live Share session does not currently have a read/write guest.");
-        }
-
-        const autoApprove: boolean = vscode.workspace
-            .getConfiguration("leetcode")
-            .get<boolean>("liveShare.autoApproveProblemFiles", true);
-        if (!autoApprove) {
-            const approval: string | undefined = await vscode.window.showWarningMessage(
-                `A Live Share guest requested a new LeetCode file: ${workspaceFolder.name}/${request.relativePath}. ` +
-                    "It will be written to the host's workspace and will not overwrite an existing file.",
-                { modal: true },
-                "Create file",
-            );
-            if (approval !== "Create file") {
-                throw new Error("The Live Share host declined the LeetCode file request.");
-            }
         }
 
         const parentSegments: string[] = pathSegments.slice(0, -1);
@@ -148,9 +128,6 @@ class LiveShareFileService implements vscode.Disposable {
         }
         if (request.relativePath.length > 1024) {
             throw new Error("The requested LeetCode file path is too long.");
-        }
-        if (Buffer.byteLength(request.content, "utf8") > maxTemplateBytes) {
-            throw new Error("The requested LeetCode file is too large.");
         }
         getSafeRelativePathSegments(request.relativePath);
     }

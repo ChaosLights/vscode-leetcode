@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.19.2
+
+- Write Live Share problem templates without a size limit or per-file confirmation.
+- Replace existing problem files when `Show Problem` resolves to the same path.
+- Keep problem-file writes confined to the selected workspace folder.
+
 ## 0.19.1
 
 - Automatically accept validated problem-file requests from read/write Live Share guests by default.
