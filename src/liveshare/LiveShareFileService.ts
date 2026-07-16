@@ -112,14 +112,19 @@ class LiveShareFileService implements vscode.Disposable {
             throw new Error("The Live Share session does not currently have a read/write guest.");
         }
 
-        const approval: string | undefined = await vscode.window.showWarningMessage(
-            `A Live Share guest requested a new LeetCode file: ${workspaceFolder.name}/${request.relativePath}. ` +
-                "It will be written to the host's workspace and will not overwrite an existing file.",
-            { modal: true },
-            "Create file",
-        );
-        if (approval !== "Create file") {
-            throw new Error("The Live Share host declined the LeetCode file request.");
+        const autoApprove: boolean = vscode.workspace
+            .getConfiguration("leetcode")
+            .get<boolean>("liveShare.autoApproveProblemFiles", true);
+        if (!autoApprove) {
+            const approval: string | undefined = await vscode.window.showWarningMessage(
+                `A Live Share guest requested a new LeetCode file: ${workspaceFolder.name}/${request.relativePath}. ` +
+                    "It will be written to the host's workspace and will not overwrite an existing file.",
+                { modal: true },
+                "Create file",
+            );
+            if (approval !== "Create file") {
+                throw new Error("The Live Share host declined the LeetCode file request.");
+            }
         }
 
         const parentSegments: string[] = pathSegments.slice(0, -1);

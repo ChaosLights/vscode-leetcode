@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.0",
+    "version": "0.19.1",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -691,6 +691,12 @@
                             ]
                         },
                         "description": "Customize the local editor action menu. These actions are not remoted through Live Share."
+                    },
+                    "leetcode.liveShare.autoApproveProblemFiles": {
+                        "type": "boolean",
+                        "default": true,
+                        "scope": "window",
+                        "description": "Automatically accept validated problem-file creation requests from read/write Live Share guests. Disable to require host confirmation."
                     },
                     "leetcode.enableSideMode": {
                         "type": "boolean",

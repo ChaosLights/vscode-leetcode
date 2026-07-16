@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.1
+
+- Automatically accept validated problem-file requests from read/write Live Share guests by default.
+- Add `leetcode.liveShare.autoApproveProblemFiles` so a host can restore per-file confirmation when desired.
+
 ## 0.19.0
 
 - Run the account-bound extension in each participant's local UI extension host.
