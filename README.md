@@ -10,12 +10,12 @@
 - Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a read/write Live Share guest sends a versioned request that the host writes immediately through the host workspace URI, replacing an existing file at the same path. Guest-local paths are never used.
 - A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
 - Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
-- The bundled CLI uses the Node.js runtime included with desktop VS Code; a separate system Node.js installation is not required.
+- The bundled CLI runs in a Node.js worker inside the local desktop VS Code extension host; it does not launch `Code.exe` as a script runner, and a separate system Node.js installation is not required.
 - Cookies are stored in each participant's local VS Code SecretStorage.
 - Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.7 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.7) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.8 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.8) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

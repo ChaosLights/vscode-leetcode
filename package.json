@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.7",
+    "version": "0.19.8",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -745,7 +745,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "test": "npm run compile && node ./test/workspacePathUtils.test.js",
+        "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/cliWorker.test.js",
         "build": "npx --yes @vscode/vsce@3.9.1 package"
     },
     "devDependencies": {

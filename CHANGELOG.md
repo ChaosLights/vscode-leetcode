@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.19.8
+
+- Run the bundled CLI in a Node.js `worker_threads` worker inside the local VS Code extension host instead of launching `Code.exe` as a Node executable.
+- Replace the misleading `node -p` requirement probe with a real bundled `leetcode --help` script execution and output check.
+- Keep external Node and WSL execution only for users who explicitly configure those modes.
+- Add worker start, exit-code, and output-size diagnostics, with custom test input redacted.
+- Add an integration test that executes the compiled CLI worker under Node.js 24 and verifies both CLI help and a directly written user session.
+
 ## 0.19.7
 
 - Bypass the legacy interactive cookie-login command on desktop and write the already verified cookie fields directly to the CLI's own local session format.
