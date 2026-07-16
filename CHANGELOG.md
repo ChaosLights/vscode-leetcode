@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.9
+
+- Wait for the CLI worker's stdout and stderr streams to finish draining before accepting its exit result, preventing large problem lists from becoming an empty result on Windows.
+- Add a regression test that captures and verifies a problem list larger than the worker pipe buffer.
+
 ## 0.19.8
 
 - Run the bundled CLI in a Node.js `worker_threads` worker inside the local VS Code extension host instead of launching `Code.exe` as a Node executable.

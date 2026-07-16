@@ -14,6 +14,7 @@ import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./share
 import { createCliUserRecord, ICliUserRecord } from "./utils/cliSessionUtils";
 import { createEnvOption, executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
+import { collectWorkerOutput, IWorkerOutput } from "./utils/workerUtils";
 import * as wsl from "./utils/wslUtils";
 
 interface INodeRuntime {
@@ -428,50 +429,32 @@ class LeetCodeExecutor implements Disposable {
         const workerPath: string = path.join(__dirname, "cliWorker.js");
         const cliArgs: string[] = args.slice(1);
         leetCodeChannel.appendLine(`[cli-worker] Starting command: leetcode ${this.describeCliArgs(cliArgs)}.`);
-        return new Promise<string>((resolve: (result: string) => void, reject: (error: Error) => void) => {
-            const worker: Worker = new Worker(workerPath, {
-                argv: cliArgs,
-                env: createEnvOption({ ...envOverrides, NODE_NO_WARNINGS: "1" }),
-                stderr: true,
-                stdout: true,
-            });
-            let result: string = "";
-            let settled: boolean = false;
-
-            worker.stdout?.on("data", (data: string | Buffer) => {
-                const text: string = data.toString();
-                result += text;
-                leetCodeChannel.append(text);
-            });
-            worker.stderr?.on("data", (data: string | Buffer) => leetCodeChannel.append(data.toString()));
-            worker.on("error", (error: Error) => {
-                if (!settled) {
-                    settled = true;
-                    reject(error);
-                }
-            });
-            worker.on("exit", (code: number) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                leetCodeChannel.appendLine(
-                    `[cli-worker] Finished command: leetcode ${this.describeCliArgs(cliArgs)}; ` +
-                    `exitCode=${code}, outputBytes=${Buffer.byteLength(result, "utf8")}.`,
-                );
-                if (code !== 0 || result.includes("ERROR")) {
-                    const error: IWorkerCommandError = new Error(
-                        `Worker command "leetcode ${this.describeCliArgs(cliArgs)}" failed with exit code ${code}.`,
-                    );
-                    if (result) {
-                        error.result = result;
-                    }
-                    reject(error);
-                } else {
-                    resolve(result);
-                }
-            });
+        const worker: Worker = new Worker(workerPath, {
+            argv: cliArgs,
+            env: createEnvOption({ ...envOverrides, NODE_NO_WARNINGS: "1" }),
+            stderr: true,
+            stdout: true,
         });
+        const output: IWorkerOutput = await collectWorkerOutput(
+            worker,
+            (text: string) => leetCodeChannel.append(text),
+            (text: string) => leetCodeChannel.append(text),
+        );
+        const result: string = output.stdout;
+        leetCodeChannel.appendLine(
+            `[cli-worker] Finished command: leetcode ${this.describeCliArgs(cliArgs)}; ` +
+            `exitCode=${output.exitCode}, outputBytes=${Buffer.byteLength(result, "utf8")}.`,
+        );
+        if (output.exitCode !== 0 || result.includes("ERROR")) {
+            const error: IWorkerCommandError = new Error(
+                `Worker command "leetcode ${this.describeCliArgs(cliArgs)}" failed with exit code ${output.exitCode}.`,
+            );
+            if (result) {
+                error.result = result;
+            }
+            throw error;
+        }
+        return result;
     }
 
     private describeCliArgs(args: string[]): string {

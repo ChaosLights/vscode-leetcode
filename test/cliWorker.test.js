@@ -3,22 +3,16 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { Worker } = require("worker_threads");
+const { collectWorkerOutput } = require("../out/src/utils/workerUtils");
 
 function runWorker(argv, home) {
-    return new Promise((resolve, reject) => {
-        const worker = new Worker(path.resolve("out/src/cliWorker.js"), {
-            argv,
-            env: { ...process.env, HOME: home, NODE_NO_WARNINGS: "1" },
-            stderr: true,
-            stdout: true,
-        });
-        let stdout = "";
-        let stderr = "";
-        worker.stdout.on("data", (data) => stdout += data.toString());
-        worker.stderr.on("data", (data) => stderr += data.toString());
-        worker.on("error", reject);
-        worker.on("exit", (code) => resolve({ code, stderr, stdout }));
+    const worker = new Worker(path.resolve("out/src/cliWorker.js"), {
+        argv,
+        env: { ...process.env, HOME: home, NODE_NO_WARNINGS: "1" },
+        stderr: true,
+        stdout: true,
     });
+    return collectWorkerOutput(worker).then(({ exitCode, stderr, stdout }) => ({ code: exitCode, stderr, stdout }));
 }
 
 (async () => {
@@ -58,6 +52,30 @@ function runWorker(argv, home) {
         const deleteCache = await runWorker(["cache", "-d"], home);
         assert.strictEqual(deleteCache.code, 0);
         assert.strictEqual(fs.existsSync(problemCache), false);
+
+        const cachedProblems = Array.from({ length: 6000 }, (_, index) => ({
+            category: "algorithms",
+            fid: index + 1,
+            id: index + 1,
+            level: "Easy",
+            link: `https://leetcode.com/problems/worker-output-${index + 1}/description/`,
+            locked: false,
+            name: `Worker Output ${index + 1}`,
+            percent: 50,
+            slug: `worker-output-${index + 1}`,
+            starred: false,
+            state: "None",
+        }));
+        fs.writeFileSync(problemCache, JSON.stringify(cachedProblems));
+        fs.writeFileSync(
+            path.join(path.dirname(problemCache), "translationConfig.json"),
+            JSON.stringify({ useEndpointTranslation: true }),
+        );
+        const largeList = await runWorker(["list"], home);
+        assert.strictEqual(largeList.code, 0);
+        assert.ok(Buffer.byteLength(largeList.stdout) > 500000);
+        assert.match(largeList.stdout, /Worker Output 6000/);
+        assert.match(largeList.stdout, /Worker Output 1\s+Easy/);
         console.log("CLI worker tests passed");
     } finally {
         fs.rmSync(home, { force: true, recursive: true });
