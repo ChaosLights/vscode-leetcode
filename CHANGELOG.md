@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.19.11
+
+- Restore the official extension's external `node` child-process runtime for every bundled CLI command; remove the `Code.exe` and Electron Worker execution paths introduced after v0.19.2.
+- Restore the official interactive `leetcode user -c` Cookie login so the CLI owns its complete session record, while retaining SecretStorage verification, automatic repair, cache isolation, and end-to-end problem-list validation.
+- Keep all Local/UI, Live Share RPC, per-account workspace routing, editor actions, temporary-file isolation, Explorer, Test, Submit, Solution, and Description behavior unchanged.
+- Add an external-process regression test covering CLI help, session discovery, cache deletion, and a 6000-problem output.
+
 ## 0.19.10
 
 - Start and advance the legacy CLI problem-category queue directly instead of relying on its obsolete `setImmediate` scheduling inside an Electron worker.

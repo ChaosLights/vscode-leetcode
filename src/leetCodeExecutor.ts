@@ -6,35 +6,17 @@ import * as fse from "fs-extra";
 import * as os from "os";
 import * as path from "path";
 import * as requireFromString from "require-from-string";
-import { Worker } from "worker_threads";
 import { ExtensionContext } from "vscode";
-import { Disposable, MessageItem, ProgressLocation, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
-import { leetCodeChannel } from "./leetCodeChannel";
+import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
 import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./shared";
-import { createCliUserRecord, ICliUserRecord } from "./utils/cliSessionUtils";
-import { createEnvOption, executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
+import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
-import { collectWorkerOutput, IWorkerOutput } from "./utils/workerUtils";
 import * as wsl from "./utils/wslUtils";
 
 interface INodeRuntime {
     argsPrefix: string[];
     command: string;
     env: NodeJS.ProcessEnv;
-    isBuiltIn: boolean;
-}
-
-interface IWorkerCommandError extends Error {
-    result?: string;
-}
-
-export interface ICliSessionWriteResult {
-    endpoint: string;
-    filePath: string;
-    hasFavoriteHash: boolean;
-    sessionCsrfLength: number;
-    sessionIdLength: number;
-    size: number;
 }
 
 class LeetCodeExecutor implements Disposable {
@@ -53,20 +35,16 @@ class LeetCodeExecutor implements Disposable {
 
     public async getRuntimeDescription(): Promise<string> {
         const runtime: INodeRuntime = await this.getNodeRuntime();
-        if (runtime.isBuiltIn) {
-            return [
-                "mode=worker_threads",
-                `node=${process.version}`,
-                `electron=${process.versions.electron || "none"}`,
-                `platform=${process.platform}`,
-                `arch=${process.arch}`,
-                `vscode=${vscodeVersion}`,
-            ].join(", ");
-        }
+        const nodeVersion: string = (await executeCommand(
+            runtime.command,
+            runtime.argsPrefix.concat(["-p", "process.version"]),
+            this.getSpawnOptions(runtime, {}),
+        )).trim();
         return [
+            "mode=external-node",
             `command=${runtime.command}`,
             `argsPrefix=${JSON.stringify(runtime.argsPrefix)}`,
-            `builtIn=${runtime.isBuiltIn}`,
+            `node=${nodeVersion}`,
             `platform=${process.platform}`,
             `arch=${process.arch}`,
             `vscode=${vscodeVersion}`,
@@ -78,11 +56,8 @@ class LeetCodeExecutor implements Disposable {
         if (!hasInited) {
             await this.removeOldCache();
         }
-        const runtime: INodeRuntime = await this.getNodeRuntime();
         try {
-            const nodeVersion: string = runtime.isBuiltIn
-                ? process.version
-                : (await this.executeCommandEx(["-p", "process.version"])).trim();
+            const nodeVersion: string = (await this.executeCommandEx(["-p", "process.version"])).trim();
             if (!/^v\d+\.\d+\.\d+/.test(nodeVersion)) {
                 throw new Error(`The selected executable did not start in Node.js mode: ${nodeVersion}`);
             }
@@ -91,17 +66,15 @@ class LeetCodeExecutor implements Disposable {
                 throw new Error("The selected runtime did not execute the bundled LeetCode CLI script.");
             }
         } catch (error) {
-            const message: string = runtime.isBuiltIn
-                ? "LeetCode could not start the Node.js runtime included with VS Code. Reload or update desktop VS Code."
-                : wsl.useWsl()
-                    ? "LeetCode needs Node.js installed inside WSL when leetcode.useWsl is enabled."
-                    : "LeetCode could not start the configured Node.js executable.";
+            const message: string = wsl.useWsl()
+                ? "LeetCode needs Node.js installed inside WSL when leetcode.useWsl is enabled."
+                : "LeetCode needs the official external Node.js runtime available as 'node' or at leetcode.nodePath.";
             const choice: MessageItem | undefined = await window.showErrorMessage(
                 message,
                 DialogOptions.open,
             );
             if (choice === DialogOptions.open) {
-                openUrl(runtime.isBuiltIn ? "https://code.visualstudio.com/download" : "https://nodejs.org");
+                openUrl("https://nodejs.org");
             }
             return false;
         }
@@ -136,48 +109,6 @@ class LeetCodeExecutor implements Disposable {
             fse.remove(path.join(cliDirectory, "user.json")),
             fse.remove(path.join(cliDirectory, "cache", "problems.json")),
         ]);
-    }
-
-    public async writeLoginSession(
-        cookie: string,
-        username: string,
-        isPremium: boolean,
-        favoriteHash?: string,
-    ): Promise<ICliSessionWriteResult> {
-        if (wsl.useWsl()) {
-            throw new Error("Direct CLI session creation is not available when leetcode.useWsl is enabled.");
-        }
-
-        const location: { directory: string, endpoint: string } = this.getCliSessionDirectory();
-        const filePath: string = path.join(location.directory, "user.json");
-        let existingHash: string | undefined;
-        try {
-            const existing: any = await fse.readJson(filePath);
-            existingHash = typeof existing.hash === "string" ? existing.hash : undefined;
-        } catch (error) {
-            existingHash = undefined;
-        }
-
-        const record: ICliUserRecord = createCliUserRecord(
-            cookie,
-            username,
-            isPremium,
-            favoriteHash || existingHash,
-        );
-        await fse.ensureDir(location.directory);
-        await fse.writeJson(filePath, record);
-        if (process.platform !== "win32") {
-            await fse.chmod(filePath, 0o600);
-        }
-        const stats: fse.Stats = await fse.stat(filePath);
-        return {
-            endpoint: location.endpoint,
-            filePath,
-            hasFavoriteHash: Boolean(record.hash),
-            sessionCsrfLength: record.sessionCSRF.length,
-            sessionIdLength: record.sessionId.length,
-            size: stats.size,
-        };
     }
 
     public async listProblems(showLocked: boolean, needTranslation: boolean): Promise<string> {
@@ -326,7 +257,7 @@ class LeetCodeExecutor implements Disposable {
 
     private getNodePath(): string {
         const extensionConfig: WorkspaceConfiguration = workspace.getConfiguration("leetcode", null);
-        const configuredPath: string = extensionConfig.get<string>("nodePath", "auto").trim();
+        const configuredPath: string = extensionConfig.get<string>("nodePath", "node").trim();
         if (configuredPath.length >= 2 && configuredPath.startsWith('"') && configuredPath.endsWith('"')) {
             return configuredPath.slice(1, -1);
         }
@@ -345,43 +276,23 @@ class LeetCodeExecutor implements Disposable {
 
     private async getNodeRuntime(): Promise<INodeRuntime> {
         const configuredExecutable: string = this.getNodePath();
-        const useAutomaticRuntime: boolean = !configuredExecutable ||
-            configuredExecutable === "auto" ||
-            configuredExecutable === "node";
+        const usePathNode: boolean = !configuredExecutable || configuredExecutable === "auto" || configuredExecutable === "node";
 
         if (wsl.useWsl()) {
-            const wslExecutable: string = useAutomaticRuntime
+            const wslExecutable: string = usePathNode
                 ? "node"
                 : await wsl.toWslPath(configuredExecutable);
             return {
                 argsPrefix: [wslExecutable],
                 command: "wsl",
                 env: {},
-                isBuiltIn: false,
             };
         }
 
-        if (!useAutomaticRuntime) {
-            if (!await fse.pathExists(configuredExecutable)) {
-                return this.getBuiltInNodeRuntime();
-            }
-            return {
-                argsPrefix: [],
-                command: configuredExecutable,
-                env: {},
-                isBuiltIn: false,
-            };
-        }
-
-        return this.getBuiltInNodeRuntime();
-    }
-
-    private getBuiltInNodeRuntime(): INodeRuntime {
         return {
             argsPrefix: [],
-            command: process.execPath,
+            command: usePathNode ? "node" : configuredExecutable,
             env: {},
-            isBuiltIn: true,
         };
     }
 
@@ -395,9 +306,6 @@ class LeetCodeExecutor implements Disposable {
 
     private async executeCommandEx(args: string[], options: cp.SpawnOptions = {}): Promise<string> {
         const runtime: INodeRuntime = await this.getNodeRuntime();
-        if (runtime.isBuiltIn) {
-            return await this.executeWorkerCommand(args, options.env);
-        }
         return await executeCommand(
             runtime.command,
             runtime.argsPrefix.concat(args),
@@ -407,67 +315,12 @@ class LeetCodeExecutor implements Disposable {
 
     private async executeCommandWithProgressEx(message: string, args: string[], options: cp.SpawnOptions = {}): Promise<string> {
         const runtime: INodeRuntime = await this.getNodeRuntime();
-        if (runtime.isBuiltIn) {
-            return await window.withProgress(
-                { location: ProgressLocation.Notification },
-                async () => this.executeWorkerCommand(args, options.env),
-            );
-        }
         return await executeCommandWithProgress(
             message,
             runtime.command,
             runtime.argsPrefix.concat(args),
             this.getSpawnOptions(runtime, options),
         );
-    }
-
-    private async executeWorkerCommand(args: string[], envOverrides: NodeJS.ProcessEnv = {}): Promise<string> {
-        if (args.length === 0 || path.basename(args[0]) !== "leetcode") {
-            throw new Error("The built-in worker runtime only accepts bundled LeetCode CLI commands.");
-        }
-
-        const workerPath: string = path.join(__dirname, "cliWorker.js");
-        const cliArgs: string[] = args.slice(1);
-        leetCodeChannel.appendLine(`[cli-worker] Starting command: leetcode ${this.describeCliArgs(cliArgs)}.`);
-        const worker: Worker = new Worker(workerPath, {
-            argv: cliArgs,
-            env: createEnvOption({ ...envOverrides, NODE_NO_WARNINGS: "1" }),
-            stderr: true,
-            stdout: true,
-        });
-        const output: IWorkerOutput = await collectWorkerOutput(
-            worker,
-            (text: string) => leetCodeChannel.append(text),
-            (text: string) => leetCodeChannel.append(text),
-        );
-        const result: string = output.stdout;
-        leetCodeChannel.appendLine(
-            `[cli-worker] Finished command: leetcode ${this.describeCliArgs(cliArgs)}; ` +
-            `exitCode=${output.exitCode}, outputBytes=${Buffer.byteLength(result, "utf8")}.`,
-        );
-        if (output.exitCode !== 0 || result.includes("ERROR")) {
-            const error: IWorkerCommandError = new Error(
-                `Worker command "leetcode ${this.describeCliArgs(cliArgs)}" failed with exit code ${output.exitCode}.`,
-            );
-            if (result) {
-                error.result = result;
-            }
-            throw error;
-        }
-        return result;
-    }
-
-    private describeCliArgs(args: string[]): string {
-        const redactedArgs: string[] = [];
-        for (let index: number = 0; index < args.length; index++) {
-            const value: string = args[index];
-            if (args[index - 1] === "-t") {
-                redactedArgs.push("<test-input>");
-            } else {
-                redactedArgs.push(value);
-            }
-        }
-        return redactedArgs.join(" ");
     }
 
     private async removeOldCache(): Promise<void> {

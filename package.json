@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.10",
+    "version": "0.19.11",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -709,9 +709,9 @@
                     },
                     "leetcode.nodePath": {
                         "type": "string",
-                        "default": "auto",
+                        "default": "node",
                         "scope": "machine-overridable",
-                        "description": "Node.js runtime used by the bundled CLI. 'auto' uses the runtime included with desktop VS Code; set a full executable path only to override it. WSL mode still uses Node.js inside WSL."
+                        "description": "External Node.js runtime used by the bundled CLI, matching the official extension. Use 'node' for PATH lookup or set a full executable path. WSL mode uses Node.js inside WSL."
                     },
                     "leetcode.colorizeProblems": {
                         "type": "boolean",
@@ -745,7 +745,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/cliWorker.test.js",
+        "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/cliProcess.test.js",
         "build": "npx --yes @vscode/vsce@3.9.1 package"
     },
     "devDependencies": {
@@ -765,7 +765,6 @@
         "highlight.js": "^10.7.2",
         "lodash": "^4.17.21",
         "markdown-it": "^8.4.2",
-        "request": "^2.88.0",
         "require-from-string": "^2.0.2",
         "unescape-js": "^1.1.4",
         "vsc-leetcode-cli": "2.8.1"

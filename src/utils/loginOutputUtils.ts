@@ -20,7 +20,6 @@ export function inspectCliLoginOutput(output: string): ICliLoginOutputState {
 export function didCliLoginSucceed(
     exitCode: number | null,
     state: ICliLoginOutputState,
-    sentCookie: boolean,
 ): boolean {
-    return exitCode === 0 && !state.failed && (state.succeeded || sentCookie);
+    return exitCode === 0 && !state.failed && state.succeeded;
 }

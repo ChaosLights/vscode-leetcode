@@ -7,15 +7,14 @@ import * as vscode from "vscode";
 import { getLeetCodeEndpoint } from "./commands/plugin";
 import { globalState, UserDataType } from "./globalState";
 import { leetCodeChannel } from "./leetCodeChannel";
-import { ICliSessionWriteResult, leetCodeExecutor } from "./leetCodeExecutor";
-import { queryFavoriteHash, queryUserData } from "./request/query-user-data";
+import { leetCodeExecutor } from "./leetCodeExecutor";
+import { queryUserData } from "./request/query-user-data";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
 import { countCliProblems } from "./utils/cliSessionUtils";
 import { didCliLoginSucceed, ICliLoginOutputState, inspectCliLoginOutput } from "./utils/loginOutputUtils";
 import * as settingUtils from "./utils/settingUtils";
 import { parseQuery } from "./utils/toolUtils";
 import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils";
-import * as wsl from "./utils/wslUtils";
 
 class LeetCodeManager extends EventEmitter {
     private currentUser: string | undefined;
@@ -217,12 +216,7 @@ class LeetCodeManager extends EventEmitter {
             childProc.on("error", rejectOnce);
             childProc.on("close", (code: number | null) => {
                 const state: ICliLoginOutputState = inspectCliLoginOutput(output);
-                if (didCliLoginSucceed(code, state, sentCookie)) {
-                    if (!state.succeeded) {
-                        leetCodeChannel.appendLine(
-                            "LeetCode CLI accepted the verified cookie without printing its legacy success message.",
-                        );
-                    }
+                if (didCliLoginSucceed(code, state)) {
                     resolveOnce();
                 } else {
                     rejectOnce(new Error(
@@ -329,32 +323,8 @@ class LeetCodeManager extends EventEmitter {
         data: UserDataType,
         clearProblemCache: boolean,
     ): Promise<void> {
-        if (wsl.useWsl()) {
-            leetCodeChannel.appendLine("[login] leetcode.useWsl is enabled; using the WSL interactive CLI login path.");
-            await this.setCookieToInteractiveCli(cookie, data.username);
-        } else {
-            let favoriteHash: string | undefined;
-            try {
-                favoriteHash = await queryFavoriteHash(cookie);
-            } catch (error) {
-                leetCodeChannel.appendLine(
-                    `[login] Favorite metadata request failed; continuing without it: ${this.getErrorMessage(error)}`,
-                );
-            }
-
-            leetCodeChannel.appendLine("[login] Writing the verified cookie directly to the legacy CLI session file.");
-            const writeResult: ICliSessionWriteResult = await leetCodeExecutor.writeLoginSession(
-                cookie,
-                data.username,
-                data.isPremium,
-                favoriteHash,
-            );
-            leetCodeChannel.appendLine(
-                `[login] CLI session written: endpoint=${writeResult.endpoint}, path=${writeResult.filePath}, ` +
-                `bytes=${writeResult.size}, sessionLength=${writeResult.sessionIdLength}, ` +
-                `csrfLength=${writeResult.sessionCsrfLength}, favoriteHash=${writeResult.hasFavoriteHash}.`,
-            );
-        }
+        leetCodeChannel.appendLine("[login] Starting the official external-Node CLI cookie login flow.");
+        await this.setCookieToInteractiveCli(cookie, data.username);
 
         if (clearProblemCache) {
             leetCodeChannel.appendLine("[login] Clearing the account-specific CLI problem cache.");
