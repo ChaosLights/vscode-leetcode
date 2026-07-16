@@ -3,6 +3,7 @@
 
 import { workspace, WorkspaceConfiguration } from "vscode";
 import { DescriptionConfiguration } from "../shared";
+import { IUserWorkspaceFolderMap, resolveUserWorkspaceFolder } from "./workspacePathUtils";
 
 export function getWorkspaceConfiguration(): WorkspaceConfiguration {
     return workspace.getConfiguration("leetcode");
@@ -12,8 +13,10 @@ export function shouldHideSolvedProblem(): boolean {
     return getWorkspaceConfiguration().get<boolean>("hideSolved", false);
 }
 
-export function getWorkspaceFolder(): string {
-    return getWorkspaceConfiguration().get<string>("workspaceFolder", "");
+export function getWorkspaceFolder(username?: string): string {
+    const config: WorkspaceConfiguration = getWorkspaceConfiguration();
+    const foldersByUser: IUserWorkspaceFolderMap = config.get<IUserWorkspaceFolderMap>("workspaceFolderByUser", {});
+    return resolveUserWorkspaceFolder(foldersByUser, username, config.get<string>("workspaceFolder", ""));
 }
 
 export function getEditorShortcuts(): string[] {

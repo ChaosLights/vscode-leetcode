@@ -26,7 +26,8 @@ import {
 } from "../utils/uiUtils";
 import {
     getSafeRelativePathSegments,
-    selectRemoteWorkspaceFolder,
+    IRemoteWorkspaceTarget,
+    selectRemoteWorkspaceTarget,
     selectWorkspaceFolder,
 } from "../utils/workspaceUtils";
 import * as wsl from "../utils/wslUtils";
@@ -178,6 +179,7 @@ async function showProblemInternal(node: IProblem): Promise<void> {
         }
 
         const leetCodeConfig: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("leetcode");
+        const configuredWorkspaceFolder: string = settingUtils.getWorkspaceFolder(leetCodeManager.getUser());
         const fileFolder: string = leetCodeConfig
             .get<string>(`filePath.${language}.folder`, leetCodeConfig.get<string>(`filePath.default.folder`, ""))
             .trim();
@@ -192,13 +194,16 @@ async function showProblemInternal(node: IProblem): Promise<void> {
         let finalUri: vscode.Uri;
 
         if (hasRemoteWorkspace) {
-            const remoteFolder: vscode.WorkspaceFolder | undefined = await selectRemoteWorkspaceFolder();
-            if (!remoteFolder) {
+            const remoteTarget: IRemoteWorkspaceTarget | undefined = await selectRemoteWorkspaceTarget(configuredWorkspaceFolder);
+            if (!remoteTarget) {
                 return;
             }
+            const remoteFileFolder: string = [remoteTarget.relativeFolder, fileFolder]
+                .filter((segment: string) => Boolean(segment))
+                .join("/");
             finalUri = await createRemoteProblemFile(
-                remoteFolder.uri,
-                fileFolder,
+                remoteTarget.workspaceFolder.uri,
+                remoteFileFolder,
                 fileName,
                 node,
                 language,
@@ -206,7 +211,7 @@ async function showProblemInternal(node: IProblem): Promise<void> {
                 needTranslation,
             );
         } else {
-            const workspaceFolder: string = await selectWorkspaceFolder();
+            const workspaceFolder: string = await selectWorkspaceFolder(configuredWorkspaceFolder);
             if (!workspaceFolder) {
                 return;
             }

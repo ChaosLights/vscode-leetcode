@@ -8,12 +8,13 @@
 
 - Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
 - Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a read/write Live Share guest sends a versioned request that the host writes immediately through the host workspace URI, replacing an existing file at the same path. Guest-local paths are never used.
+- A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
 - Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
 - The bundled CLI uses the Node.js runtime included with desktop VS Code; a separate system Node.js installation is not required.
 - Cookies are stored in each participant's local VS Code SecretStorage.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.3 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.3) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.4 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.4) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
@@ -96,7 +97,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 - Select `Show Problem` to directly open the file with the problem description.
 - The Explorer includes a fixed `NeetCode 150` category with the official 18 topic groups. It filters LeetCode problems and does not change Premium access.
 
-  > Note：You can specify the path of the workspace folder to store the problem files by updating the setting `leetcode.workspaceFolder`. The default value is：**$HOME/.leetcode/**.
+  > Note: You can specify one destination with `leetcode.workspaceFolder`, or use `leetcode.workspaceFolderByUser` to map locally signed-in LeetCode usernames to different workspace-relative folders. Remote destinations must stay inside the opened shared workspace.
 
   > You can specify whether including the problem description in comments or not by updating the setting `leetcode.showCommentDescription`.
 
@@ -149,6 +150,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 | `leetcode.useWsl`                 | Specify whether to use WSL or not                                                                                                                                                                                                                             | `false`            |
 | `leetcode.endpoint`               | Specify the active endpoint. Supported endpoints are: `leetcode`, `leetcode-cn`                                                                                                                                                                               | `leetcode`         |
 | `leetcode.workspaceFolder`        | Specify the path of the workspace folder to store the problem files.                                                                                                                                                                                          | `""`               |
+| `leetcode.workspaceFolderByUser`  | Map each locally signed-in LeetCode username to a workspace-relative problem folder. A missing entry is an error when the map is non-empty.                                                                                                                    | `{}`               |
 | `leetcode.filePath`               | Specify the relative path under the workspace and the file name to save the problem files. More details can be found [here](https://github.com/LeetCode-OpenSource/vscode-leetcode/wiki/Customize-the-Relative-Folder-and-the-File-Name-of-the-Problem-File). |                    |
 | `leetcode.enableStatusBar`        | Specify whether the LeetCode status bar will be shown or not.                                                                                                                                                                                                 | `true`             |
 | `leetcode.editor.shortcuts`       | Choose actions in the local editor action menu. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                                | `["submit", "test", "solution", "description"]` |

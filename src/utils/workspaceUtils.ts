@@ -6,13 +6,19 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { IQuickItemEx } from "../shared";
-import { getWorkspaceConfiguration, getWorkspaceFolder } from "./settingUtils";
+import { getWorkspaceConfiguration } from "./settingUtils";
 import { showDirectorySelectDialog } from "./uiUtils";
+import { resolveRemoteWorkspaceRelativePath } from "./workspacePathUtils";
 import * as wsl from "./wslUtils";
 
 export interface IActiveSolutionFile {
     filePath: string;
     dispose(): Promise<void>;
+}
+
+export interface IRemoteWorkspaceTarget {
+    relativeFolder: string;
+    workspaceFolder: vscode.WorkspaceFolder;
 }
 
 export function getSafeRelativePathSegments(relativePath: string): string[] {
@@ -59,8 +65,54 @@ export async function selectRemoteWorkspaceFolder(): Promise<vscode.WorkspaceFol
     }))?.value;
 }
 
-export async function selectWorkspaceFolder(): Promise<string> {
-    let workspaceFolderSetting: string = getWorkspaceFolder();
+export async function selectRemoteWorkspaceTarget(configuredPath: string): Promise<IRemoteWorkspaceTarget | undefined> {
+    const remoteFolders: vscode.WorkspaceFolder[] = (vscode.workspace.workspaceFolders || [])
+        .filter((folder: vscode.WorkspaceFolder) => folder.uri.scheme !== "file");
+    if (!remoteFolders.length) {
+        return undefined;
+    }
+
+    const isAbsoluteConfiguredPath: boolean = path.posix.isAbsolute(configuredPath.replace(/\\/g, "/"));
+    if (configuredPath.trim() && isAbsoluteConfiguredPath) {
+        const matches: IRemoteWorkspaceTarget[] = remoteFolders
+            .map((folder: vscode.WorkspaceFolder): IRemoteWorkspaceTarget | undefined => {
+                const mappedRelativeFolder: string | undefined = resolveRemoteWorkspaceRelativePath(
+                    configuredPath,
+                    folder.uri.path,
+                    folder.name,
+                    folder.uri.scheme === "vsls",
+                );
+                return mappedRelativeFolder === undefined
+                    ? undefined
+                    : { relativeFolder: mappedRelativeFolder, workspaceFolder: folder };
+            })
+            .filter((target: IRemoteWorkspaceTarget | undefined): target is IRemoteWorkspaceTarget => Boolean(target));
+        if (matches.length === 1) {
+            return matches[0];
+        }
+        if (!matches.length) {
+            throw new Error(`The configured LeetCode workspace folder is outside the shared workspace: ${configuredPath}`);
+        }
+    }
+
+    const workspaceFolder: vscode.WorkspaceFolder | undefined = await selectRemoteWorkspaceFolder();
+    if (!workspaceFolder) {
+        return undefined;
+    }
+    const relativeFolder: string | undefined = resolveRemoteWorkspaceRelativePath(
+        configuredPath,
+        workspaceFolder.uri.path,
+        workspaceFolder.name,
+        workspaceFolder.uri.scheme === "vsls",
+    );
+    if (relativeFolder === undefined) {
+        throw new Error(`Invalid LeetCode workspace folder: ${configuredPath}`);
+    }
+    return { relativeFolder, workspaceFolder };
+}
+
+export async function selectWorkspaceFolder(configuredPath: string): Promise<string> {
+    let workspaceFolderSetting: string = configuredPath;
     if (workspaceFolderSetting.trim() === "") {
         workspaceFolderSetting = await determineLeetCodeFolder();
         if (workspaceFolderSetting === "") {

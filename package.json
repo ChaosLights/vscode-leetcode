@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.3",
+    "version": "0.19.4",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -413,9 +413,18 @@
                     },
                     "leetcode.workspaceFolder": {
                         "type": "string",
-                        "scope": "application",
+                        "scope": "window",
                         "description": "The path of the workspace folder to store the problem files.",
                         "default": ""
+                    },
+                    "leetcode.workspaceFolderByUser": {
+                        "type": "object",
+                        "scope": "window",
+                        "default": {},
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "Map each signed-in LeetCode username to a workspace-relative problem folder. When the map is non-empty, a missing user entry is an error."
                     },
                     "leetcode.filePath": {
                         "type": "object",
@@ -701,7 +710,7 @@
                     "leetcode.nodePath": {
                         "type": "string",
                         "default": "auto",
-                        "scope": "application",
+                        "scope": "machine-overridable",
                         "description": "Node.js runtime used by the bundled CLI. 'auto' uses the runtime included with desktop VS Code; set a full executable path only to override it. WSL mode still uses Node.js inside WSL."
                     },
                     "leetcode.colorizeProblems": {
@@ -736,6 +745,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
+        "test": "npm run compile && node ./test/workspacePathUtils.test.js",
         "build": "npx --yes @vscode/vsce@3.9.1 package"
     },
     "devDependencies": {

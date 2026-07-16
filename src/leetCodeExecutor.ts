@@ -10,6 +10,7 @@ import { ExtensionContext } from "vscode";
 import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
 import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./shared";
 import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
+import { shouldUseElectronRunAsNodeFlag } from "./utils/runtimeUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
 import * as wsl from "./utils/wslUtils";
 
@@ -274,8 +275,7 @@ class LeetCodeExecutor implements Disposable {
     private getBuiltInNodeRuntime(): INodeRuntime {
         const versions: any = process.versions;
         const isElectronRuntime: boolean = Boolean(versions.electron);
-        const [vscodeMajor, vscodeMinor]: number[] = vscodeVersion.split(".").map(Number);
-        const supportsRunAsNodeFlag: boolean = vscodeMajor > 1 || vscodeMajor === 1 && vscodeMinor >= 62;
+        const supportsRunAsNodeFlag: boolean = shouldUseElectronRunAsNodeFlag(vscodeVersion);
         return {
             argsPrefix: isElectronRuntime && supportsRunAsNodeFlag ? ["--ms-enable-electron-run-as-node"] : [],
             command: process.execPath,

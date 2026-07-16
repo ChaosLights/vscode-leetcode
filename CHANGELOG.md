@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.19.4
+
+- Add `leetcode.workspaceFolderByUser` so one checked-in workspace configuration can route each locally signed-in LeetCode account to a different shared folder.
+- Honor `leetcode.workspaceFolder` for Remote/Codespaces and Live Share when the configured destination stays inside the shared workspace.
+- Allow workspace configuration of `leetcode.workspaceFolder` and `leetcode.nodePath` through appropriate VS Code configuration scopes.
+- Stop passing the removed `--ms-enable-electron-run-as-node` compatibility flag to VS Code 1.127 and newer.
+- Fail explicitly when a signed-in username has no configured folder instead of writing to the remote workspace root.
+
 ## 0.19.3
 
 - Run the bundled LeetCode CLI with VS Code's built-in Node.js runtime by default.
