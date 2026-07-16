@@ -7,9 +7,7 @@ import * as vscode from "vscode";
 import { leetCodeChannel } from "./leetCodeChannel";
 import { leetCodeExecutor } from "./leetCodeExecutor";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
-import { createEnvOption } from "./utils/cpUtils";
 import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils";
-import * as wsl from "./utils/wslUtils";
 import { getLeetCodeEndpoint } from "./commands/plugin";
 import { globalState } from "./globalState";
 import { queryUserData } from "./request/query-user-data";
@@ -171,6 +169,11 @@ class LeetCodeManager extends EventEmitter {
 
     public async setCookieToCli(cookie: string, name: string): Promise<void> {
         const leetCodeBinaryPath: string = await leetCodeExecutor.getLeetCodeBinaryPath();
+        const childProc: cp.ChildProcess = await leetCodeExecutor.spawn([
+            leetCodeBinaryPath,
+            "user",
+            loginArgsMapping.get("Cookie") ?? "",
+        ]);
         return new Promise((resolve: (res: void) => void, reject: (e: Error) => void) => {
             let settled: boolean = false;
 
@@ -186,15 +189,6 @@ class LeetCodeManager extends EventEmitter {
                     reject(error);
                 }
             };
-
-            const childProc: cp.ChildProcess = wsl.useWsl()
-                ? cp.spawn("wsl", [leetCodeExecutor.node, leetCodeBinaryPath, "user", loginArgsMapping.get("Cookie") ?? ""], {
-                      shell: true,
-                  })
-                : cp.spawn(leetCodeExecutor.node, [leetCodeBinaryPath, "user", loginArgsMapping.get("Cookie") ?? ""], {
-                      shell: true,
-                      env: createEnvOption(),
-                  });
 
             childProc.stdout?.on("data", async (data: string | Buffer) => {
                 data = data.toString();

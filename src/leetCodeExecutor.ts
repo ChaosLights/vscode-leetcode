@@ -7,33 +7,31 @@ import * as os from "os";
 import * as path from "path";
 import * as requireFromString from "require-from-string";
 import { ExtensionContext } from "vscode";
-import { ConfigurationChangeEvent, Disposable, MessageItem, window, workspace, WorkspaceConfiguration } from "vscode";
+import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
 import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./shared";
-import { executeCommand, executeCommandWithProgress } from "./utils/cpUtils";
+import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
 import * as wsl from "./utils/wslUtils";
-import { toWslPath, useWsl } from "./utils/wslUtils";
+
+interface INodeRuntime {
+    argsPrefix: string[];
+    command: string;
+    env: NodeJS.ProcessEnv;
+    isBuiltIn: boolean;
+}
 
 class LeetCodeExecutor implements Disposable {
     private leetCodeRootPath: string;
-    private nodeExecutable: string;
-    private configurationChangeListener: Disposable;
 
     constructor() {
         this.leetCodeRootPath = path.join(__dirname, "..", "..", "node_modules", "vsc-leetcode-cli");
-        this.nodeExecutable = this.getNodePath();
-        this.configurationChangeListener = workspace.onDidChangeConfiguration((event: ConfigurationChangeEvent) => {
-            if (event.affectsConfiguration("leetcode.nodePath")) {
-                this.nodeExecutable = this.getNodePath();
-            }
-        }, this);
     }
 
     public async getLeetCodeBinaryPath(): Promise<string> {
         if (wsl.useWsl()) {
-            return `${await wsl.toWslPath(`"${path.join(this.leetCodeRootPath, "bin", "leetcode")}"`)}`;
+            return await wsl.toWslPath(path.join(this.leetCodeRootPath, "bin", "leetcode"));
         }
-        return `"${path.join(this.leetCodeRootPath, "bin", "leetcode")}"`;
+        return path.join(this.leetCodeRootPath, "bin", "leetcode");
     }
 
     public async meetRequirements(context: ExtensionContext): Promise<boolean> {
@@ -41,34 +39,33 @@ class LeetCodeExecutor implements Disposable {
         if (!hasInited) {
             await this.removeOldCache();
         }
-        if (this.nodeExecutable !== "node") {
-            if (!await fse.pathExists(this.nodeExecutable)) {
-                throw new Error(`The Node.js executable does not exist on path ${this.nodeExecutable}`);
-            }
-            // Wrap the executable with "" to avoid space issue in the path.
-            this.nodeExecutable = `"${this.nodeExecutable}"`;
-            if (useWsl()) {
-                this.nodeExecutable = await toWslPath(this.nodeExecutable);
-            }
-        }
+        const runtime: INodeRuntime = await this.getNodeRuntime();
         try {
-            await this.executeCommandEx(this.nodeExecutable, ["-v"]);
+            const nodeVersion: string = (await this.executeCommandEx(["-p", "process.version"])).trim();
+            if (!/^v\d+\.\d+\.\d+/.test(nodeVersion)) {
+                throw new Error(`The selected executable did not start in Node.js mode: ${nodeVersion}`);
+            }
         } catch (error) {
+            const message: string = runtime.isBuiltIn
+                ? "LeetCode could not start the Node.js runtime included with VS Code. Reload or update desktop VS Code."
+                : wsl.useWsl()
+                    ? "LeetCode needs Node.js installed inside WSL when leetcode.useWsl is enabled."
+                    : "LeetCode could not start the configured Node.js executable.";
             const choice: MessageItem | undefined = await window.showErrorMessage(
-                "LeetCode extension needs Node.js installed in environment path",
+                message,
                 DialogOptions.open,
             );
             if (choice === DialogOptions.open) {
-                openUrl("https://nodejs.org");
+                openUrl(runtime.isBuiltIn ? "https://code.visualstudio.com/download" : "https://nodejs.org");
             }
             return false;
         }
         for (const plugin of supportedPlugins) {
             try { // Check plugin
-                await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "plugin", "-e", plugin]);
+                await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-e", plugin]);
             } catch (error) { // Remove old cache that may cause the error download plugin and activate
                 await this.removeOldCache();
-                await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "plugin", "-i", plugin]);
+                await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-i", plugin]);
             }
         }
         // Set the global state HasInited true to skip delete old cache after init
@@ -77,15 +74,15 @@ class LeetCodeExecutor implements Disposable {
     }
 
     public async deleteCache(): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "cache", "-d"]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "cache", "-d"]);
     }
 
     public async getUserInfo(): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "user"]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "user"]);
     }
 
     public async signOut(): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "user", "-L"]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "user", "-L"]);
     }
 
     public async listProblems(showLocked: boolean, needTranslation: boolean): Promise<string> {
@@ -97,7 +94,7 @@ class LeetCodeExecutor implements Disposable {
             cmd.push("-q");
             cmd.push("L");
         }
-        return await this.executeCommandEx(this.nodeExecutable, cmd);
+        return await this.executeCommandEx(cmd);
     }
 
     public async showProblem(problemNode: IProblem, language: string, filePath: string, showDescriptionInComment: boolean = false, needTranslation: boolean): Promise<void> {
@@ -126,7 +123,7 @@ class LeetCodeExecutor implements Disposable {
             cmd.push("-T"); // use -T to force English version
         }
 
-        return this.executeCommandWithProgressEx("Fetching problem data...", this.nodeExecutable, cmd);
+        return this.executeCommandWithProgressEx("Fetching problem data...", cmd);
     }
 
     /**
@@ -148,7 +145,7 @@ class LeetCodeExecutor implements Disposable {
         if (!needTranslation) {
             cmd.push("-T");
         }
-        const solution: string = await this.executeCommandWithProgressEx("Fetching top voted solution from discussions...", this.nodeExecutable, cmd);
+        const solution: string = await this.executeCommandWithProgressEx("Fetching top voted solution from discussions...", cmd);
         return solution;
     }
 
@@ -157,28 +154,28 @@ class LeetCodeExecutor implements Disposable {
         if (!needTranslation) {
             cmd.push("-T");
         }
-        return await this.executeCommandWithProgressEx("Fetching problem description...", this.nodeExecutable, cmd);
+        return await this.executeCommandWithProgressEx("Fetching problem description...", cmd);
     }
 
     public async listSessions(): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "session"]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "session"]);
     }
 
     public async enableSession(name: string): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "session", "-e", name]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "session", "-e", name]);
     }
 
     public async createSession(id: string): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "session", "-c", id]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "session", "-c", id]);
     }
 
     public async deleteSession(id: string): Promise<string> {
-        return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "session", "-d", id]);
+        return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "session", "-d", id]);
     }
 
     public async submitSolution(filePath: string): Promise<string> {
         try {
-            return await this.executeCommandWithProgressEx("Submitting to LeetCode...", this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "submit", `"${filePath}"`]);
+            return await this.executeCommandWithProgressEx("Submitting to LeetCode...", [await this.getLeetCodeBinaryPath(), "submit", filePath]);
         } catch (error) {
             if (error.result) {
                 return error.result;
@@ -189,18 +186,18 @@ class LeetCodeExecutor implements Disposable {
 
     public async testSolution(filePath: string, testString?: string): Promise<string> {
         if (testString) {
-            return await this.executeCommandWithProgressEx("Submitting to LeetCode...", this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "test", `"${filePath}"`, "-t", `${testString}`]);
+            return await this.executeCommandWithProgressEx("Submitting to LeetCode...", [await this.getLeetCodeBinaryPath(), "test", filePath, "-t", testString]);
         }
-        return await this.executeCommandWithProgressEx("Submitting to LeetCode...", this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "test", `"${filePath}"`]);
+        return await this.executeCommandWithProgressEx("Submitting to LeetCode...", [await this.getLeetCodeBinaryPath(), "test", filePath]);
     }
 
     public async switchEndpoint(endpoint: string): Promise<string> {
         switch (endpoint) {
             case Endpoint.LeetCodeCN:
-                return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "plugin", "-e", "leetcode.cn"]);
+                return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-e", "leetcode.cn"]);
             case Endpoint.LeetCode:
             default:
-                return await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "plugin", "-d", "leetcode.cn"]);
+                return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-d", "leetcode.cn"]);
         }
     }
 
@@ -209,7 +206,7 @@ class LeetCodeExecutor implements Disposable {
         if (!addToFavorite) {
             commandParams.push("-d");
         }
-        await this.executeCommandWithProgressEx("Updating the favorite list...", "node", commandParams);
+        await this.executeCommandWithProgressEx("Updating the favorite list...", commandParams);
     }
 
     public async getCompaniesAndTags(): Promise<{ companies: { [key: string]: string[] }, tags: { [key: string]: string[] } }> {
@@ -223,31 +220,95 @@ class LeetCodeExecutor implements Disposable {
         return { companies: COMPONIES, tags: TAGS };
     }
 
-    public get node(): string {
-        return this.nodeExecutable;
+    public async spawn(args: string[], options: cp.SpawnOptions = {}): Promise<cp.ChildProcess> {
+        const runtime: INodeRuntime = await this.getNodeRuntime();
+        return spawnCommand(runtime.command, runtime.argsPrefix.concat(args), this.getSpawnOptions(runtime, options));
     }
 
     public dispose(): void {
-        this.configurationChangeListener.dispose();
+        return;
     }
 
     private getNodePath(): string {
         const extensionConfig: WorkspaceConfiguration = workspace.getConfiguration("leetcode", null);
-        return extensionConfig.get<string>("nodePath", "node" /* default value */);
+        const configuredPath: string = extensionConfig.get<string>("nodePath", "auto").trim();
+        if (configuredPath.length >= 2 && configuredPath.startsWith('"') && configuredPath.endsWith('"')) {
+            return configuredPath.slice(1, -1);
+        }
+        return configuredPath;
     }
 
-    private async executeCommandEx(command: string, args: string[], options: cp.SpawnOptions = { shell: true }): Promise<string> {
+    private async getNodeRuntime(): Promise<INodeRuntime> {
+        const configuredExecutable: string = this.getNodePath();
+        const useAutomaticRuntime: boolean = !configuredExecutable ||
+            configuredExecutable === "auto" ||
+            configuredExecutable === "node";
+
         if (wsl.useWsl()) {
-            return await executeCommand("wsl", [command].concat(args), options);
+            const wslExecutable: string = useAutomaticRuntime
+                ? "node"
+                : await wsl.toWslPath(configuredExecutable);
+            return {
+                argsPrefix: [wslExecutable],
+                command: "wsl",
+                env: {},
+                isBuiltIn: false,
+            };
         }
-        return await executeCommand(command, args, options);
+
+        if (!useAutomaticRuntime) {
+            if (!await fse.pathExists(configuredExecutable)) {
+                return this.getBuiltInNodeRuntime();
+            }
+            return {
+                argsPrefix: [],
+                command: configuredExecutable,
+                env: {},
+                isBuiltIn: false,
+            };
+        }
+
+        return this.getBuiltInNodeRuntime();
     }
 
-    private async executeCommandWithProgressEx(message: string, command: string, args: string[], options: cp.SpawnOptions = { shell: true }): Promise<string> {
-        if (wsl.useWsl()) {
-            return await executeCommandWithProgress(message, "wsl", [command].concat(args), options);
-        }
-        return await executeCommandWithProgress(message, command, args, options);
+    private getBuiltInNodeRuntime(): INodeRuntime {
+        const versions: any = process.versions;
+        const isElectronRuntime: boolean = Boolean(versions.electron);
+        const [vscodeMajor, vscodeMinor]: number[] = vscodeVersion.split(".").map(Number);
+        const supportsRunAsNodeFlag: boolean = vscodeMajor > 1 || vscodeMajor === 1 && vscodeMinor >= 62;
+        return {
+            argsPrefix: isElectronRuntime && supportsRunAsNodeFlag ? ["--ms-enable-electron-run-as-node"] : [],
+            command: process.execPath,
+            env: isElectronRuntime ? { ELECTRON_RUN_AS_NODE: "1" } : {},
+            isBuiltIn: true,
+        };
+    }
+
+    private getSpawnOptions(runtime: INodeRuntime, options: cp.SpawnOptions): cp.SpawnOptions {
+        return {
+            ...options,
+            env: { ...options.env, ...runtime.env },
+            shell: false,
+        };
+    }
+
+    private async executeCommandEx(args: string[], options: cp.SpawnOptions = {}): Promise<string> {
+        const runtime: INodeRuntime = await this.getNodeRuntime();
+        return await executeCommand(
+            runtime.command,
+            runtime.argsPrefix.concat(args),
+            this.getSpawnOptions(runtime, options),
+        );
+    }
+
+    private async executeCommandWithProgressEx(message: string, args: string[], options: cp.SpawnOptions = {}): Promise<string> {
+        const runtime: INodeRuntime = await this.getNodeRuntime();
+        return await executeCommandWithProgress(
+            message,
+            runtime.command,
+            runtime.argsPrefix.concat(args),
+            this.getSpawnOptions(runtime, options),
+        );
     }
 
     private async removeOldCache(): Promise<void> {

@@ -34,9 +34,7 @@
 
 ## 运行条件
 
-- [VS Code 1.23.0+](https://code.visualstudio.com/)
-- [Node.js 10+](https://nodejs.org)
-  > 注意：请确保`Node`在`PATH`环境变量中。您也可以通过设定 `leetcode.nodePath` 选项来指定 `Node.js` 可执行文件的路径。
+- 桌面版 [VS Code 1.57.0+](https://code.visualstudio.com/)。本 fork 默认使用 VS Code 内置的 Node.js 运行时，无需另行安装 Node.js 或配置 `PATH`。
 
 ## 快速开始
 
@@ -141,7 +139,7 @@
 | `leetcode.enableStatusBar`        | 指定是否在 VS Code 下方显示插件状态栏。                                                                                                                                                                                                                                                                       | `true`             |
 | `leetcode.editor.shortcuts`       | 指定在编辑器内所自定义的快捷方式。可用的快捷方式有: `submit`, `test`, `star`, `solution`, `description`。                                                                                                                                                                                                     | `["submit, test"]` |
 | `leetcode.enableSideMode`         | 指定在解决一道题时，是否将`问题预览`、`高票答案`与`提交结果`窗口集中在编辑器的第二栏。                                                                                                                                                                                                                        | `true`             |
-| `leetcode.nodePath`               | 指定 `Node.js` 可执行文件的路径。如：C:\Program Files\nodejs\node.exe                                                                                                                                                                                                                                         | `node`             |
+| `leetcode.nodePath`               | 使用 `auto` 调用 VS Code 内置 Node.js；也可以填写外部 Node.js 可执行文件的完整路径。WSL 模式仍使用 WSL 内的 Node.js。                                                                                                                                                                                     | `auto`             |
 | `leetcode.showCommentDescription` | 指定是否要在注释中显示题干。                                                                                                                                                                                                                                                                                  | `false`            |
 | `leetcode.useEndpointTranslation` | 是否显示翻译版本内容。                                                                                                                                                                                                                                                                                        | `true`             |
 | `leetcode.allowReportData`        | 为了更好的产品体验允许上报用户埋数据                                                                                                                                                                                                                                                                          | `true`             |

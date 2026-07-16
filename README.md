@@ -9,10 +9,11 @@
 - Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
 - Problem files selected from the Explorer stay in the shared workspace: Remote/Codespaces use `vscode.workspace.fs`; a read/write Live Share guest sends a versioned request that the host writes immediately through the host workspace URI, replacing an existing file at the same path. Guest-local paths are never used.
 - Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
+- The bundled CLI uses the Node.js runtime included with desktop VS Code; a separate system Node.js installation is not required.
 - Cookies are stored in each participant's local VS Code SecretStorage.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.2 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.2) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.3 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.3) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
@@ -46,9 +47,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 
 ## Requirements
 
-- [VS Code 1.30.1+](https://code.visualstudio.com/)
-- [Node.js 10+](https://nodejs.org)
-  > NOTE: Please make sure that `Node` is in your `PATH` environment variable. You can also use the setting `leetcode.nodePath` to specify the location of your `Node.js` executable.
+- Desktop [VS Code 1.57.0+](https://code.visualstudio.com/). This fork uses VS Code's built-in Node.js runtime and does not require a separate Node.js installation.
 
 ## Quick Start
 
@@ -154,7 +153,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 | `leetcode.enableStatusBar`        | Specify whether the LeetCode status bar will be shown or not.                                                                                                                                                                                                 | `true`             |
 | `leetcode.editor.shortcuts`       | Choose actions in the local editor action menu. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                                | `["submit", "test", "solution", "description"]` |
 | `leetcode.enableSideMode`         | Specify whether `preview`, `solution` and `submission` tab should be grouped into the second editor column when solving a problem.                                                                                                                            | `true`             |
-| `leetcode.nodePath`               | Specify the `Node.js` executable path. for example, C:\Program Files\nodejs\node.exe                                                                                                                                                                          | `node`             |
+| `leetcode.nodePath`               | Use `auto` for VS Code's built-in Node.js runtime, or specify a full external Node.js executable path. WSL mode uses Node.js inside WSL.                                                                                                                       | `auto`             |
 | `leetcode.showCommentDescription` | Specify whether to include the problem description in the comments                                                                                                                                                                                            | `false`            |
 | `leetcode.useEndpointTranslation` | Use endpoint's translation (if available)                                                                                                                                                                                                                     | `true`             |
 | `leetcode.colorizeProblems`       | Add difficulty badge and colorize problems files in explorer tree                                                                                                                                                                                             | `true`             |

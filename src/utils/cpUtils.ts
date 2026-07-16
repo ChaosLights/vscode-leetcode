@@ -13,7 +13,7 @@ export async function executeCommand(command: string, args: string[], options: c
     return new Promise((resolve: (res: string) => void, reject: (e: Error) => void): void => {
         let result: string = "";
 
-        const childProc: cp.ChildProcess = cp.spawn(command, args, { ...options, env: createEnvOption() });
+        const childProc: cp.ChildProcess = spawnCommand(command, args, options);
 
         childProc.stdout?.on("data", (data: string | Buffer) => {
             data = data.toString();
@@ -39,6 +39,13 @@ export async function executeCommand(command: string, args: string[], options: c
     });
 }
 
+export function spawnCommand(command: string, args: string[], options: cp.SpawnOptions = {}): cp.ChildProcess {
+    return cp.spawn(command, args, {
+        ...options,
+        env: createEnvOption(options.env),
+    });
+}
+
 export async function executeCommandWithProgress(message: string, command: string, args: string[], options: cp.SpawnOptions = { shell: true }): Promise<string> {
     let result: string = "";
     await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification }, async (p: vscode.Progress<{}>) => {
@@ -55,15 +62,14 @@ export async function executeCommandWithProgress(message: string, command: strin
     return result;
 }
 
-// clone process.env and add http proxy
-export function createEnvOption(): {} {
+// Clone process.env, apply command-specific overrides, and add the configured HTTP proxy.
+export function createEnvOption(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, ...overrides };
     const proxy: string | undefined = getHttpAgent();
     if (proxy) {
-        const env: any = Object.create(process.env);
         env.http_proxy = proxy;
-        return env;
     }
-    return process.env;
+    return env;
 }
 
 function getHttpAgent(): string | undefined {

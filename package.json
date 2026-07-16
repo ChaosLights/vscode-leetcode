@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.19.2",
+    "version": "0.19.3",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -700,9 +700,9 @@
                     },
                     "leetcode.nodePath": {
                         "type": "string",
-                        "default": "node",
+                        "default": "auto",
                         "scope": "application",
-                        "description": "The Node.js executable path. for example, C:\\Program Files\\nodejs\\node.exe"
+                        "description": "Node.js runtime used by the bundled CLI. 'auto' uses the runtime included with desktop VS Code; set a full executable path only to override it. WSL mode still uses Node.js inside WSL."
                     },
                     "leetcode.colorizeProblems": {
                         "type": "boolean",

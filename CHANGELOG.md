@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.19.3
+
+- Run the bundled LeetCode CLI with VS Code's built-in Node.js runtime by default.
+- Remove the desktop requirement to install Node.js or add `node` to `PATH`.
+- Keep full-path external Node.js and WSL Node.js overrides available through `leetcode.nodePath` and `leetcode.useWsl`.
+- Route interactive login and favorite commands through the same runtime instead of hard-coding `node`.
+
 ## 0.19.2
 
 - Write Live Share problem templates without a size limit or per-file confirmation.
