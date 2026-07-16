@@ -133,6 +133,7 @@ export const urls = {
     base: "https://leetcode.com",
     graphql: "https://leetcode.com/graphql",
     userGraphql: "https://leetcode.com/graphql",
+    favorites: "https://leetcode.com/list/api/questions",
     login: "https://leetcode.com/accounts/login/",
     authLoginUrl: `https://leetcode.com/authorize-login/${protocol}/?path=leetcode.vscode-leetcode`,
 };
@@ -142,6 +143,7 @@ export const urlsCn = {
     base: "https://leetcode.cn",
     graphql: "https://leetcode.cn/graphql",
     userGraphql: "https://leetcode.cn/graphql/",
+    favorites: "https://leetcode.cn/list/api/questions",
     login: "https://leetcode.cn/accounts/login/",
     authLoginUrl: `https://leetcode.cn/authorize-login/${protocol}/?path=leetcode.vscode-leetcode`,
 };

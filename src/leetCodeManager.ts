@@ -7,12 +7,15 @@ import * as vscode from "vscode";
 import { getLeetCodeEndpoint } from "./commands/plugin";
 import { globalState, UserDataType } from "./globalState";
 import { leetCodeChannel } from "./leetCodeChannel";
-import { leetCodeExecutor } from "./leetCodeExecutor";
-import { queryUserData } from "./request/query-user-data";
+import { ICliSessionWriteResult, leetCodeExecutor } from "./leetCodeExecutor";
+import { queryFavoriteHash, queryUserData } from "./request/query-user-data";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
+import { countCliProblems } from "./utils/cliSessionUtils";
 import { didCliLoginSucceed, ICliLoginOutputState, inspectCliLoginOutput } from "./utils/loginOutputUtils";
+import * as settingUtils from "./utils/settingUtils";
 import { parseQuery } from "./utils/toolUtils";
 import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils";
+import * as wsl from "./utils/wslUtils";
 
 class LeetCodeManager extends EventEmitter {
     private currentUser: string | undefined;
@@ -157,7 +160,7 @@ class LeetCodeManager extends EventEmitter {
         }
     }
 
-    public async setCookieToCli(cookie: string, name: string): Promise<void> {
+    private async setCookieToInteractiveCli(cookie: string, name: string): Promise<void> {
         const leetCodeBinaryPath: string = await leetCodeExecutor.getLeetCodeBinaryPath();
         const childProc: cp.ChildProcess = await leetCodeExecutor.spawn([
             leetCodeBinaryPath,
@@ -247,8 +250,10 @@ class LeetCodeManager extends EventEmitter {
                 return false;
             }
 
-            await this.setCookieToCli(cookie, data.username);
-            await leetCodeExecutor.deleteCache();
+            leetCodeChannel.appendLine(
+                `[login] Repair cookie validation succeeded: endpoint=${getLeetCodeEndpoint()}, user=${data.username}.`,
+            );
+            await this.establishCliSession(cookie, data, true);
             await this.saveVerifiedLogin(cookie, data, false);
             leetCodeChannel.appendLine(`Rebuilt the LeetCode CLI session for ${data.username}.`);
             return true;
@@ -268,8 +273,10 @@ class LeetCodeManager extends EventEmitter {
             throw new Error("The saved LeetCode cookie is invalid or expired.");
         }
 
-        await this.setCookieToCli(cookie, data.username);
-        await leetCodeExecutor.deleteCache();
+        leetCodeChannel.appendLine(
+            `[login] Remote cookie validation succeeded: endpoint=${getLeetCodeEndpoint()}, user=${data.username}.`,
+        );
+        await this.establishCliSession(cookie, data, true);
         await this.saveVerifiedLogin(cookie, data);
         await vscode.window.showInformationMessage(`Successfully signed in as ${data.username}.`);
     }
@@ -289,10 +296,10 @@ class LeetCodeManager extends EventEmitter {
                 return false;
             }
 
-            await this.setCookieToCli(cookie, data.username);
-            if (globalState.needsCliSessionMigration()) {
-                await leetCodeExecutor.deleteCache();
-            }
+            leetCodeChannel.appendLine(
+                `[login] Stored cookie validation succeeded: endpoint=${getLeetCodeEndpoint()}, user=${data.username}.`,
+            );
+            await this.establishCliSession(cookie, data, globalState.needsCliSessionMigration());
             await this.saveVerifiedLogin(cookie, data, false);
             leetCodeChannel.appendLine(`Restored LeetCode login for ${data.username} from secure storage.`);
             return true;
@@ -315,6 +322,69 @@ class LeetCodeManager extends EventEmitter {
         if (emitStatusChanged) {
             this.emit("statusChanged");
         }
+    }
+
+    private async establishCliSession(
+        cookie: string,
+        data: UserDataType,
+        clearProblemCache: boolean,
+    ): Promise<void> {
+        if (wsl.useWsl()) {
+            leetCodeChannel.appendLine("[login] leetcode.useWsl is enabled; using the WSL interactive CLI login path.");
+            await this.setCookieToInteractiveCli(cookie, data.username);
+        } else {
+            let favoriteHash: string | undefined;
+            try {
+                favoriteHash = await queryFavoriteHash(cookie);
+            } catch (error) {
+                leetCodeChannel.appendLine(
+                    `[login] Favorite metadata request failed; continuing without it: ${this.getErrorMessage(error)}`,
+                );
+            }
+
+            leetCodeChannel.appendLine("[login] Writing the verified cookie directly to the legacy CLI session file.");
+            const writeResult: ICliSessionWriteResult = await leetCodeExecutor.writeLoginSession(
+                cookie,
+                data.username,
+                data.isPremium,
+                favoriteHash,
+            );
+            leetCodeChannel.appendLine(
+                `[login] CLI session written: endpoint=${writeResult.endpoint}, path=${writeResult.filePath}, ` +
+                `bytes=${writeResult.size}, sessionLength=${writeResult.sessionIdLength}, ` +
+                `csrfLength=${writeResult.sessionCsrfLength}, favoriteHash=${writeResult.hasFavoriteHash}.`,
+            );
+        }
+
+        if (clearProblemCache) {
+            leetCodeChannel.appendLine("[login] Clearing the account-specific CLI problem cache.");
+            await leetCodeExecutor.deleteCache();
+        }
+
+        const useEndpointTranslation: boolean = settingUtils.shouldUseEndpointTranslation();
+        leetCodeChannel.appendLine(`[login] CLI runtime: ${await leetCodeExecutor.getRuntimeDescription()}.`);
+        leetCodeChannel.appendLine(
+            `[login] Validating the CLI session by listing problems (translation=${useEndpointTranslation}).`,
+        );
+        let output: string = await leetCodeExecutor.listProblems(true, useEndpointTranslation);
+        let problemCount: number = countCliProblems(output);
+        leetCodeChannel.appendLine(
+            `[login] CLI list completed: outputBytes=${Buffer.byteLength(output, "utf8")}, parsedProblems=${problemCount}.`,
+        );
+        if (problemCount === 0 && !clearProblemCache) {
+            leetCodeChannel.appendLine("[login] Cached problem list was empty; clearing it and retrying from the endpoint.");
+            await leetCodeExecutor.deleteCache();
+            output = await leetCodeExecutor.listProblems(true, useEndpointTranslation);
+            problemCount = countCliProblems(output);
+            leetCodeChannel.appendLine(
+                `[login] CLI list retry completed: outputBytes=${Buffer.byteLength(output, "utf8")}, ` +
+                `parsedProblems=${problemCount}.`,
+            );
+        }
+        if (problemCount === 0) {
+            throw new Error("CLI session validation returned no recognizable problems.");
+        }
+        leetCodeChannel.appendLine(`[login] CLI session validation succeeded with ${problemCount} problems.`);
     }
 
     private async discardUnverifiedCliSession(): Promise<void> {

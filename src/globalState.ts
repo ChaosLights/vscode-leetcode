@@ -6,7 +6,7 @@ import * as vscode from "vscode";
 const CookieKey = "leetcode-cookie";
 const UserStatusKey = "leetcode-user-status";
 const CliSessionVersionKey = "leetcode-cli-session-version";
-const CurrentCliSessionVersion = 1;
+const CurrentCliSessionVersion = 2;
 
 export type UserDataType = {
     isSignedIn: boolean;

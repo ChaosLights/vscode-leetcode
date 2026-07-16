@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.19.7
+
+- Bypass the legacy interactive cookie-login command on desktop and write the already verified cookie fields directly to the CLI's own local session format.
+- Validate every rebuilt session end to end by running a non-interactive problem list before marking the user as signed in.
+- Add cookie-safe login diagnostics for endpoint, session-file path and size, token lengths, runtime selection, CLI output size, and parsed problem count.
+- Preserve or retrieve the Favorite list hash used by star/unstar without logging or duplicating the full cookie in the CLI session file.
+
 ## 0.19.6
 
 - Accept a verified cookie when the legacy CLI consumes both prompts and exits successfully but omits its optional success text under Node.js 24.

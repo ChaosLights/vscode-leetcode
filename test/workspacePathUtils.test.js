@@ -5,6 +5,11 @@ const {
 } = require("../out/src/utils/workspacePathUtils");
 const { shouldUseElectronRunAsNodeFlag } = require("../out/src/utils/runtimeUtils");
 const { didCliLoginSucceed, inspectCliLoginOutput } = require("../out/src/utils/loginOutputUtils");
+const {
+    countCliProblems,
+    createCliUserRecord,
+    parseCliCookie,
+} = require("../out/src/utils/cliSessionUtils");
 
 assert.strictEqual(
     resolveUserWorkspaceFolder({ wucan: "code/wucan", wangchu: "code/wangchu" }, "wucan", "ignored"),
@@ -61,6 +66,32 @@ assert.strictEqual(
 assert.strictEqual(
     didCliLoginSucceed(0, inspectCliLoginOutput("cookie: \n[ERROR] rejected"), true),
     false,
+);
+
+assert.deepStrictEqual(
+    parseCliCookie("csrftoken=csrf-value; other=x=y; LEETCODE_SESSION=session-value;"),
+    { sessionCSRF: "csrf-value", sessionId: "session-value" },
+);
+assert.throws(() => parseCliCookie("LEETCODE_SESSION=missing-csrf"), /csrftoken/);
+assert.deepStrictEqual(
+    createCliUserRecord(
+        "LEETCODE_SESSION=session-value; csrftoken=csrf-value;",
+        "wangchu",
+        true,
+        "favorite-hash",
+    ),
+    {
+        hash: "favorite-hash",
+        login: "wangchu",
+        name: "wangchu",
+        paid: true,
+        sessionCSRF: "csrf-value",
+        sessionId: "session-value",
+    },
+);
+assert.strictEqual(
+    countCliProblems("    v [   1 ] Two Sum Easy (55.00 %)\n      [   2 ] Add Two Numbers Medium (45.00 %)\n"),
+    2,
 );
 
 console.log("workspace path tests passed");

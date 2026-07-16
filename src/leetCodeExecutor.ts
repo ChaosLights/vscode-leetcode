@@ -9,6 +9,7 @@ import * as requireFromString from "require-from-string";
 import { ExtensionContext } from "vscode";
 import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
 import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./shared";
+import { createCliUserRecord, ICliUserRecord } from "./utils/cliSessionUtils";
 import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
 import { shouldUseElectronRunAsNodeFlag } from "./utils/runtimeUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
@@ -19,6 +20,15 @@ interface INodeRuntime {
     command: string;
     env: NodeJS.ProcessEnv;
     isBuiltIn: boolean;
+}
+
+export interface ICliSessionWriteResult {
+    endpoint: string;
+    filePath: string;
+    hasFavoriteHash: boolean;
+    sessionCsrfLength: number;
+    sessionIdLength: number;
+    size: number;
 }
 
 class LeetCodeExecutor implements Disposable {
@@ -33,6 +43,18 @@ class LeetCodeExecutor implements Disposable {
             return await wsl.toWslPath(path.join(this.leetCodeRootPath, "bin", "leetcode"));
         }
         return path.join(this.leetCodeRootPath, "bin", "leetcode");
+    }
+
+    public async getRuntimeDescription(): Promise<string> {
+        const runtime: INodeRuntime = await this.getNodeRuntime();
+        return [
+            `command=${runtime.command}`,
+            `argsPrefix=${JSON.stringify(runtime.argsPrefix)}`,
+            `builtIn=${runtime.isBuiltIn}`,
+            `platform=${process.platform}`,
+            `arch=${process.arch}`,
+            `vscode=${vscodeVersion}`,
+        ].join(", ");
     }
 
     public async meetRequirements(context: ExtensionContext): Promise<boolean> {
@@ -87,14 +109,53 @@ class LeetCodeExecutor implements Disposable {
     }
 
     public async clearLoginSession(): Promise<void> {
-        const endpoint: string = workspace.getConfiguration("leetcode").get<string>("endpoint", Endpoint.LeetCode);
-        const appDirectory: string = endpoint === Endpoint.LeetCodeCN ? "leetcode.cn" : "leetcode";
-        const homeDirectory: string = process.env.HOME || process.env.USERPROFILE || os.homedir();
-        const cliDirectory: string = path.join(homeDirectory, ".lc", appDirectory);
+        const cliDirectory: string = this.getCliSessionDirectory().directory;
         await Promise.all([
             fse.remove(path.join(cliDirectory, "user.json")),
             fse.remove(path.join(cliDirectory, "cache", "problems.json")),
         ]);
+    }
+
+    public async writeLoginSession(
+        cookie: string,
+        username: string,
+        isPremium: boolean,
+        favoriteHash?: string,
+    ): Promise<ICliSessionWriteResult> {
+        if (wsl.useWsl()) {
+            throw new Error("Direct CLI session creation is not available when leetcode.useWsl is enabled.");
+        }
+
+        const location: { directory: string, endpoint: string } = this.getCliSessionDirectory();
+        const filePath: string = path.join(location.directory, "user.json");
+        let existingHash: string | undefined;
+        try {
+            const existing: any = await fse.readJson(filePath);
+            existingHash = typeof existing.hash === "string" ? existing.hash : undefined;
+        } catch (error) {
+            existingHash = undefined;
+        }
+
+        const record: ICliUserRecord = createCliUserRecord(
+            cookie,
+            username,
+            isPremium,
+            favoriteHash || existingHash,
+        );
+        await fse.ensureDir(location.directory);
+        await fse.writeJson(filePath, record);
+        if (process.platform !== "win32") {
+            await fse.chmod(filePath, 0o600);
+        }
+        const stats: fse.Stats = await fse.stat(filePath);
+        return {
+            endpoint: location.endpoint,
+            filePath,
+            hasFavoriteHash: Boolean(record.hash),
+            sessionCsrfLength: record.sessionCSRF.length,
+            sessionIdLength: record.sessionId.length,
+            size: stats.size,
+        };
     }
 
     public async listProblems(showLocked: boolean, needTranslation: boolean): Promise<string> {
@@ -248,6 +309,16 @@ class LeetCodeExecutor implements Disposable {
             return configuredPath.slice(1, -1);
         }
         return configuredPath;
+    }
+
+    private getCliSessionDirectory(): { directory: string, endpoint: string } {
+        const endpoint: string = workspace.getConfiguration("leetcode").get<string>("endpoint", Endpoint.LeetCode);
+        const appDirectory: string = endpoint === Endpoint.LeetCodeCN ? "leetcode.cn" : "leetcode";
+        const homeDirectory: string = process.env.HOME || process.env.USERPROFILE || os.homedir();
+        return {
+            directory: path.join(homeDirectory, ".lc", appDirectory),
+            endpoint,
+        };
     }
 
     private async getNodeRuntime(): Promise<INodeRuntime> {
