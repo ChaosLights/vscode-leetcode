@@ -104,7 +104,7 @@
   - `Solution`: 显示该问题的高票解答；
   - `Description`: 显示该问题的题目描述。
 
-  > 主机/本地文件由本插件生成 CodeLens；Live Share 来宾只接收主机转发的一套，不会再生成第二套。点击会在来宾本地还原成操作，因此仍使用点击窗口登录的 LeetCode 账号。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
+  > 主机/本地文件由本插件生成 CodeLens；Live Share 来宾只接收主机转发的一套，不会再生成第二套。Codespaces 重连或 Live Share 首次同步返回空时，插件会做有界重取，但不会注册一套匹配的来宾 provider。点击会在来宾本地还原成操作，因此仍使用点击窗口登录的 LeetCode 账号。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
 
   > 如果快捷入口被隐藏，请将 `editor.codeLens` 设为 `true`。编辑器标题栏火箭、右键 `LeetCode` 菜单和命令面板仍可作为兜底入口。
 

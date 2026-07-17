@@ -2,10 +2,61 @@
 // Licensed under the MIT license.
 
 import * as vscode from "vscode";
+import {
+    findCodeLensDocumentMetadata,
+    ICodeLensDocumentMetadata,
+} from "../codelens/LiveShareSafeCodeLensProvider";
 import { leetCodeChannel } from "../leetCodeChannel";
 import { leetCodeExecutor } from "../leetCodeExecutor";
 
 const liveShareExtensionId: string = "ms-vsliveshare.vsliveshare";
+const codeLensDiagnosticTimeoutMs: number = 5000;
+const leetCodeCodeLensTitles: ReadonlySet<string> = new Set<string>([
+    "Submit",
+    "Test",
+    "Toggle Star",
+    "Solution",
+    "Description",
+]);
+
+function formatConfigurationValue(value: boolean | undefined): string {
+    return value === undefined ? "unset" : value.toString();
+}
+
+async function getCodeLensProviderDescription(
+    document: vscode.TextDocument,
+    metadata: ICodeLensDocumentMetadata,
+): Promise<string> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+        const codeLenses: vscode.CodeLens[] | undefined = await Promise.race([
+            vscode.commands.executeCommand<vscode.CodeLens[]>(
+                "vscode.executeCodeLensProvider",
+                document.uri,
+                Number.MAX_VALUE,
+            ),
+            new Promise<undefined>((resolve: (value: undefined) => void) => {
+                timeout = setTimeout(() => resolve(undefined), codeLensDiagnosticTimeoutMs);
+            }),
+        ]);
+        if (!codeLenses) {
+            return `provider=timeout-after-${codeLensDiagnosticTimeoutMs}ms`;
+        }
+        const leetCodeActions: string[] = codeLenses
+            .filter((codeLens: vscode.CodeLens): boolean =>
+                codeLens.range.start.line === metadata.footerLine &&
+                Boolean(codeLens.command && leetCodeCodeLensTitles.has(codeLens.command.title)))
+            .map((codeLens: vscode.CodeLens): string => codeLens.command?.title || "");
+        return `providerTotal=${codeLenses.length}, leetCodeActions=` +
+            `${leetCodeActions.join("|") || "none"}`;
+    } catch (error) {
+        return `provider=error:${error instanceof Error ? error.name : "unknown"}`;
+    } finally {
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+    }
+}
 
 export async function diagnosePairing(context: vscode.ExtensionContext): Promise<void> {
     const extensionKind: string = context.extension.extensionKind === vscode.ExtensionKind.UI ? "ui" : "workspace";
@@ -17,8 +68,18 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
             return `${folder.uri.scheme}:${writable === undefined ? "unknown" : writable ? "writable" : "read-only"}`;
         },
     );
-    const editorConfiguration: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("editor");
+    const activeDocument: vscode.TextDocument | undefined =
+        vscode.window.activeTextEditor?.document || vscode.window.visibleTextEditors[0]?.document;
+    const configurationScope: vscode.ConfigurationScope | undefined = activeDocument ? {
+        uri: activeDocument.uri,
+        languageId: activeDocument.languageId,
+    } : undefined;
+    const editorConfiguration: vscode.WorkspaceConfiguration =
+        vscode.workspace.getConfiguration("editor", configurationScope);
     const codeLensEnabled: boolean = editorConfiguration.get<boolean>("codeLens", true);
+    const codeLensInspection = editorConfiguration.inspect<boolean>("codeLens");
+    const metadata: ICodeLensDocumentMetadata | undefined =
+        activeDocument ? findCodeLensDocumentMetadata(activeDocument) : undefined;
 
     leetCodeChannel.appendLine("[diagnostics] ---- LeetCode pairing diagnostics ----");
     leetCodeChannel.appendLine(
@@ -36,8 +97,25 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
         `active=${liveShareExtension?.isActive || false}.`,
     );
     leetCodeChannel.appendLine(
-        `[diagnostics] codeLens=${codeLensEnabled}.`,
+        `[diagnostics] activeDocument=${activeDocument?.uri.scheme || "none"}, ` +
+        `language=${activeDocument?.languageId || "none"}, recognized=${Boolean(metadata)}.`,
     );
+    leetCodeChannel.appendLine(
+        `[diagnostics] codeLens=${codeLensEnabled}, ` +
+        `default=${formatConfigurationValue(codeLensInspection?.defaultValue)}, ` +
+        `global=${formatConfigurationValue(codeLensInspection?.globalValue)}, ` +
+        `workspace=${formatConfigurationValue(codeLensInspection?.workspaceValue)}, ` +
+        `workspaceFolder=${formatConfigurationValue(codeLensInspection?.workspaceFolderValue)}, ` +
+        `defaultLanguage=${formatConfigurationValue(codeLensInspection?.defaultLanguageValue)}, ` +
+        `globalLanguage=${formatConfigurationValue(codeLensInspection?.globalLanguageValue)}, ` +
+        `workspaceLanguage=${formatConfigurationValue(codeLensInspection?.workspaceLanguageValue)}, ` +
+        `workspaceFolderLanguage=${formatConfigurationValue(codeLensInspection?.workspaceFolderLanguageValue)}.`,
+    );
+    if (activeDocument && metadata) {
+        leetCodeChannel.appendLine(
+            `[diagnostics] ${await getCodeLensProviderDescription(activeDocument, metadata)}.`,
+        );
+    }
     try {
         leetCodeChannel.appendLine(`[diagnostics] ${await leetCodeExecutor.getRuntimeDescription()}.`);
     } catch (error) {

@@ -497,6 +497,12 @@ export async function run(): Promise<void> {
         isCaseSensitive: true,
         isReadonly: false,
     });
+    const remoteProvider: InMemoryFileSystemProvider = new InMemoryFileSystemProvider();
+    const remoteRegistration: vscode.Disposable =
+        vscode.workspace.registerFileSystemProvider("vscode-remote", remoteProvider, {
+            isCaseSensitive: true,
+            isReadonly: false,
+        });
     try {
         const fileUri: vscode.Uri = vscode.Uri.parse("vsls:/~0/code/guest/1.two-sum.cpp");
         const parentUri: vscode.Uri = vscode.Uri.parse("vsls:/~0/code/guest");
@@ -616,7 +622,7 @@ export async function run(): Promise<void> {
             "created",
         );
         const solutionDocument: vscode.TextDocument = await vscode.workspace.openTextDocument(solutionUri);
-        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController();
+        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController([1000]);
         const actionInvocations: Array<{ command: string; uri: vscode.Uri }> = [];
         const actionCommandRegistrations: vscode.Disposable[] = [
             vscode.commands.registerCommand("leetcode.submitSolution", (uri: vscode.Uri) => {
@@ -637,6 +643,16 @@ export async function run(): Promise<void> {
         );
         await vscode.workspace.fs.writeFile(localSolutionUri, Buffer.from(solutionText, "utf8"));
         let remotedCodeLensRegistration: vscode.Disposable | undefined;
+        let remoteCountingRegistration: vscode.Disposable | undefined;
+        let remoteProviderCalls: number = 0;
+        let guestProviderCalls: number = 0;
+        let guestProviderReady: boolean = false;
+        const remoteSolutionUri: vscode.Uri =
+            vscode.Uri.parse("vscode-remote://probe/code/8.string-to-integer-atoi.cpp");
+        remoteProvider.writeFile(
+            remoteSolutionUri,
+            Buffer.from(solutionText, "utf8"),
+        );
         try {
             const guestLocalCodeLenses: vscode.CodeLens[] | undefined =
                 await vscode.commands.executeCommand<vscode.CodeLens[]>(
@@ -674,11 +690,45 @@ export async function run(): Promise<void> {
             assert.ok(localEditor.selection.isEqual(localOriginalSelection));
             actionInvocations.length = 0;
 
+            remoteCountingRegistration = vscode.languages.registerCodeLensProvider(
+                { scheme: "vscode-remote" },
+                {
+                    provideCodeLenses: (): vscode.CodeLens[] => {
+                        remoteProviderCalls++;
+                        return [];
+                    },
+                },
+            );
+            const remoteDocument: vscode.TextDocument =
+                await vscode.workspace.openTextDocument(remoteSolutionUri);
+            await vscode.window.showTextDocument(remoteDocument, { preview: false });
+            await waitFor(
+                () => remoteProviderCalls > 0,
+                "The visible Codespaces document did not request CodeLens providers.",
+            );
+            const remoteCallsBeforeRecovery: number = remoteProviderCalls;
+            await waitFor(
+                () => remoteProviderCalls > remoteCallsBeforeRecovery,
+                "The bounded Codespaces CodeLens recovery did not refresh the visible editor.",
+                3000,
+            );
+            const remoteCodeLenses: vscode.CodeLens[] | undefined =
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    "vscode.executeCodeLensProvider",
+                    remoteSolutionUri,
+                    Number.MAX_VALUE,
+                );
+            assertCodeLensActions(remoteCodeLenses, remoteSolutionUri);
+
             remotedCodeLensRegistration = vscode.languages.registerCodeLensProvider(
                 { scheme: "vsls" },
                 {
-                    provideCodeLenses: (document: vscode.TextDocument): vscode.CodeLens[] =>
-                        (localCodeLenses || []).map((codeLens: vscode.CodeLens) =>
+                    provideCodeLenses: (document: vscode.TextDocument): vscode.CodeLens[] => {
+                        guestProviderCalls++;
+                        if (!guestProviderReady) {
+                            return [];
+                        }
+                        return (localCodeLenses || []).map((codeLens: vscode.CodeLens) =>
                             new vscode.CodeLens(codeLens.range, {
                                 title: codeLens.command?.title || "",
                                 command: codeLens.command?.command || "",
@@ -691,7 +741,8 @@ export async function run(): Promise<void> {
                                     ),
                                     [],
                                 ],
-                            })),
+                            }));
+                    },
                 },
             );
             const guestCodeLenses: vscode.CodeLens[] | undefined =
@@ -700,12 +751,35 @@ export async function run(): Promise<void> {
                     solutionUri,
                     Number.MAX_VALUE,
                 );
-            assertCodeLensActions(guestCodeLenses, solutionUri);
+            assert.deepStrictEqual(
+                guestCodeLenses,
+                [],
+                "The guest fixture must reproduce Live Share's transient empty first result.",
+            );
 
             const guestEditor: vscode.TextEditor =
                 await vscode.window.showTextDocument(solutionDocument, { preview: false });
             const originalSelection: vscode.Selection = new vscode.Selection(2, 0, 2, 0);
             await setEditorSelection(guestEditor, originalSelection);
+            await waitFor(
+                () => guestProviderCalls > 1,
+                "The visible Live Share document did not make its initial empty provider request.",
+            );
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+            guestProviderReady = true;
+            const guestCallsBeforeRecovery: number = guestProviderCalls;
+            await waitFor(
+                () => guestProviderCalls > guestCallsBeforeRecovery,
+                "The bounded Live Share CodeLens recovery did not retry the remoted provider.",
+                3000,
+            );
+            const recoveredGuestCodeLenses: vscode.CodeLens[] | undefined =
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    "vscode.executeCodeLensProvider",
+                    solutionUri,
+                    Number.MAX_VALUE,
+                );
+            assertCodeLensActions(recoveredGuestCodeLenses, solutionUri);
 
             const expectedCommands: string[] = [
                 "leetcode.submitSolution",
@@ -713,8 +787,8 @@ export async function run(): Promise<void> {
                 "leetcode.showSolution",
                 "leetcode.previewProblem",
             ];
-            for (let index: number = 0; index < (guestCodeLenses || []).length; index++) {
-                const command: vscode.Command | undefined = guestCodeLenses?.[index].command;
+            for (let index: number = 0; index < (recoveredGuestCodeLenses || []).length; index++) {
+                const command: vscode.Command | undefined = recoveredGuestCodeLenses?.[index].command;
                 assert.ok(command);
                 await vscode.commands.executeCommand(command.command, ...(command.arguments || []));
                 await waitFor(
@@ -726,7 +800,7 @@ export async function run(): Promise<void> {
                 assert.ok(guestEditor.selection.isEqual(originalSelection));
             }
 
-            const repeatCommand: vscode.Command | undefined = guestCodeLenses?.[1].command;
+            const repeatCommand: vscode.Command | undefined = recoveredGuestCodeLenses?.[1].command;
             assert.ok(repeatCommand);
             await vscode.commands.executeCommand(
                 repeatCommand.command,
@@ -784,12 +858,14 @@ export async function run(): Promise<void> {
                 await vscode.workspace.fs.delete(fakeMarkerUri);
             }
         } finally {
+            remoteCountingRegistration?.dispose();
             remotedCodeLensRegistration?.dispose();
             for (const actionCommandRegistration of actionCommandRegistrations) {
                 actionCommandRegistration.dispose();
             }
             codeLensController.dispose();
             await vscode.workspace.fs.delete(localSolutionUri);
+            await vscode.workspace.fs.delete(remoteSolutionUri);
         }
 
         assert.strictEqual(
@@ -861,6 +937,7 @@ export async function run(): Promise<void> {
             /symbolic-link/i,
         );
     } finally {
+        remoteRegistration.dispose();
         registration.dispose();
     }
 

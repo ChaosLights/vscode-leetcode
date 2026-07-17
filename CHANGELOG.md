@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.21.2
+
+- Recover native CodeLens after a Codespaces connection restore by issuing two bounded provider refreshes for visible, valid `file:`, `untitled:`, and `vscode-remote:` LeetCode documents.
+- Retry Live Share 1.1.122's exclusive guest CodeLens provider after transient co-editing/version synchronization failures. The recovery pulse uses a never-matching provider only to refresh VS Code's registry, so it cannot add a second set of guest actions.
+- Scope `editor.codeLens` diagnostics to the active document and language, report every configuration level, and execute the active provider to distinguish disabled rendering, invalid markers, and an empty Live Share response without logging a path or credential.
+- Add VS Code 1.119 Extension Host regressions for the `vscode-remote:` scheme, visible-editor provider refresh, recovery from a transient empty guest result, bounded retry, and single-set results.
+
 ## 0.21.1
 
 - Recreate a generated problem file after a Live Share guest deletes it, even while Live Share still reports the deleted file through its stale metadata and read caches.

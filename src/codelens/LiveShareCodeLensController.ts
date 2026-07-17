@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 import * as vscode from "vscode";
+import { CodeLensRecoveryController } from "./CodeLensRecoveryController";
 import { LiveShareSafeCodeLensProvider } from "./LiveShareSafeCodeLensProvider";
 import { LocalCodeLensCommandBridge } from "./LocalCodeLensCommandBridge";
 
@@ -16,17 +17,22 @@ export const LOCAL_CODE_LENS_SELECTOR: vscode.DocumentSelector = [
 
 export class LiveShareCodeLensController implements vscode.Disposable {
     private readonly provider: LiveShareSafeCodeLensProvider;
+    private readonly recoveryController: CodeLensRecoveryController;
     private readonly disposables: vscode.Disposable[];
 
-    constructor() {
+    constructor(recoveryDelaysMs?: ReadonlyArray<number>) {
         this.provider = new LiveShareSafeCodeLensProvider();
+        const providerRegistration: vscode.Disposable =
+            vscode.languages.registerCodeLensProvider(LOCAL_CODE_LENS_SELECTOR, this.provider);
+        this.recoveryController = new CodeLensRecoveryController(this.provider, recoveryDelaysMs);
         this.disposables = [
+            this.recoveryController,
+            providerRegistration,
             this.provider,
             new LocalCodeLensCommandBridge(),
-            vscode.languages.registerCodeLensProvider(LOCAL_CODE_LENS_SELECTOR, this.provider),
             vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
                 if (event.affectsConfiguration("leetcode.editor.shortcuts")) {
-                    this.provider.refresh();
+                    this.refresh();
                 }
             }),
         ];
@@ -34,6 +40,7 @@ export class LiveShareCodeLensController implements vscode.Disposable {
 
     public refresh(): void {
         this.provider.refresh();
+        this.recoveryController.schedule();
     }
 
     public dispose(): void {

@@ -10,15 +10,15 @@
 - Problem files selected from the Explorer stay in the shared workspace. Remote/Codespaces and current Live Share both use VS Code's `workspace.fs`; Live Share routes `vsls:` writes through its own provider and checks the actual guest's access. Existing solution files are opened without being overwritten.
 - If a participant deletes a generated problem file, **Code Now** waits for Live Share's stale file cache to catch up and recreates it through an atomic, non-overwriting rename. Concurrently recreated files and friends' edits are preserved.
 - A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
-- Native one-click CodeLens is restored for local and host documents. The provider deliberately excludes guest `vsls:` documents, so Live Share forwards exactly one host set. Each lens uses a Live Share 1.1.122 guest-local built-in command as a caret signal; the local extension restores the selection and runs the requested action with that window's own account. The rocket and right-click **LeetCode** menu remain as fallbacks.
+- Native one-click CodeLens is restored for local and host documents. The provider deliberately excludes guest `vsls:` documents, so Live Share forwards exactly one host set. Each lens uses a Live Share 1.1.122 guest-local built-in command as a caret signal; the local extension restores the selection and runs the requested action with that window's own account. Bounded recovery refreshes repair empty CodeLens models after Codespaces reconnects and transient Live Share synchronization failures without adding duplicate actions. The rocket and right-click **LeetCode** menu remain as fallbacks.
 - The bundled CLI runs through an external Node.js 20+ child process. It never launches `Code.exe` or an Electron Worker as a script runner.
 - Each participant's recovery Cookie is stored in local VS Code SecretStorage. The CLI's required runtime session is separately isolated under this extension's local VS Code global storage; neither location is shared through Live Share.
 - Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The fork sends no telemetry, usernames, problem paths, or workspace paths.
-- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, and CodeLens visibility for support.
+- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, scoped CodeLens configuration, and provider result counts for support.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.21.1 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.1) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.21.2 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.2) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
@@ -123,7 +123,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
   - `Solution`: Show the top voted solution for the current problem.
   - `Description`: Show the problem description page.
 
-  > The host/local provider renders them beside `@lc code=end`. A Live Share guest receives that single set and does not create a second one; clicks are converted back into local actions and use the clicking window's account. You can customize them with `leetcode.editor.shortcuts`. The defaults are `Submit`, `Test`, `Solution`, and `Description`.
+  > The host/local provider renders them beside `@lc code=end`. A Live Share guest receives that single set and does not create a second one; clicks are converted back into local actions and use the clicking window's account. Codespaces and Live Share recovery retries are bounded and never register a matching second guest provider. You can customize them with `leetcode.editor.shortcuts`. The defaults are `Submit`, `Test`, `Solution`, and `Description`.
 
   > If they are hidden, set `editor.codeLens` to `true`. The editor-title rocket, right-click **LeetCode** menu, and command palette remain available as fallbacks.
 
