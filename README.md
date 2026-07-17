@@ -10,15 +10,15 @@
 - Problem files selected from the Explorer stay in the shared workspace. Remote/Codespaces and current Live Share both use VS Code's `workspace.fs`; Live Share routes `vsls:` writes through its own provider and checks the actual guest's access. Existing solution files are opened without being overwritten.
 - If a participant deletes a generated problem file, **Code Now** waits for Live Share's stale file cache to catch up and recreates it through an atomic, non-overwriting rename. Concurrently recreated files and friends' edits are preserved.
 - A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
-- Native one-click CodeLens is restored for local and host documents. The provider deliberately excludes guest `vsls:` documents, so Live Share forwards exactly one host set. Each lens uses a Live Share 1.1.122 guest-local built-in command as a caret signal; the local extension restores the selection and runs the requested action with that window's own account. Bounded recovery refreshes repair empty CodeLens models after Codespaces reconnects and transient Live Share synchronization failures without adding duplicate actions. The rocket and right-click **LeetCode** menu remain as fallbacks.
+- Native one-click CodeLens remains available for ordinary local files. Codespaces (`vscode-remote:`) and Live Share guest (`vsls:`) documents use one local clickable inline-action strip beside `@lc code=end`. This avoids Live Share 1.1.122's cross-extension-host CodeLens command loss (`no commands`), never forwards account actions through the host, and cannot create a duplicate guest set. The rocket and right-click **LeetCode** menu remain as fallbacks.
 - The bundled CLI runs through an external Node.js 20+ child process. It never launches `Code.exe` or an Electron Worker as a script runner.
 - Each participant's recovery Cookie is stored in local VS Code SecretStorage. The CLI's required runtime session is separately isolated under this extension's local VS Code global storage; neither location is shared through Live Share.
 - Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The fork sends no telemetry, usernames, problem paths, or workspace paths.
-- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, scoped CodeLens configuration, and provider result counts for support.
+- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, scoped CodeLens/inlay-hint configuration, and provider result counts for support.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.21.2 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.2) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.21.3 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.3) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
@@ -115,7 +115,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
 </p>
 
-- The extension supports 5 native one-click CodeLens shortcuts:
+- The extension supports 5 one-click editor shortcuts:
 
   - `Submit`: Submit your answer to LeetCode.
   - `Test`: Test your answer with customized test cases.
@@ -123,9 +123,9 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
   - `Solution`: Show the top voted solution for the current problem.
   - `Description`: Show the problem description page.
 
-  > The host/local provider renders them beside `@lc code=end`. A Live Share guest receives that single set and does not create a second one; clicks are converted back into local actions and use the clicking window's account. Codespaces and Live Share recovery retries are bounded and never register a matching second guest provider. You can customize them with `leetcode.editor.shortcuts`. The defaults are `Submit`, `Test`, `Solution`, and `Description`.
+  > Ordinary local files use CodeLens. Codespaces and Live Share guest documents render one local inline-action strip beside `@lc code=end`; nothing is remoted from the host, so each click uses that window's account and the guest cannot receive a duplicate set. Customize both presentations with `leetcode.editor.shortcuts`. The defaults are `Submit`, `Test`, `Solution`, and `Description`.
 
-  > If they are hidden, set `editor.codeLens` to `true`. The editor-title rocket, right-click **LeetCode** menu, and command palette remain available as fallbacks.
+  > For local CodeLens, set `editor.codeLens` to `true`. For Codespaces/Live Share inline actions, set `editor.inlayHints.enabled` to `"on"`. The editor-title rocket, right-click **LeetCode** menu, and command palette remain available as fallbacks.
 
 ---
 
@@ -159,7 +159,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 | `leetcode.workspaceFolderByUser`  | Map each locally signed-in LeetCode username to a workspace-relative problem folder. A missing entry is an error when the map is non-empty.                                                                                                                    | `{}`               |
 | `leetcode.filePath`               | Specify the relative path under the workspace and the file name to save the problem files. More details can be found [here](https://github.com/LeetCode-OpenSource/vscode-leetcode/wiki/Customize-the-Relative-Folder-and-the-File-Name-of-the-Problem-File). |                    |
 | `leetcode.enableStatusBar`        | Specify whether the LeetCode status bar will be shown or not.                                                                                                                                                                                                 | `true`             |
-| `leetcode.editor.shortcuts`       | Choose actions in CodeLens and the fallback action menus. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                   | `["submit", "test", "solution", "description"]` |
+| `leetcode.editor.shortcuts`       | Choose actions in local CodeLens, Remote/Live Share inline actions, and fallback menus. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                    | `["submit", "test", "solution", "description"]` |
 | `leetcode.enableSideMode`         | Specify whether `preview`, `solution` and `submission` tab should be grouped into the second editor column when solving a problem.                                                                                                                            | `true`             |
 | `leetcode.nodePath`               | Use `node` for the external Node.js 20+ child-process runtime, or specify a full executable path. WSL mode uses Node.js 20+ inside WSL.                                                                                                                    | `node`             |
 | `leetcode.showCommentDescription` | Specify whether to include the problem description in the comments                                                                                                                                                                                            | `false`            |

@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.21.3
+
+- Stop forwarding LeetCode CodeLens commands from Codespaces into Live Share. VS Code can preserve the lens range while losing a parameterized command between UI/Remote language-service hosts, which is rendered as the literal `no commands`.
+- Keep native CodeLens for ordinary local files, and render one local clickable inline-action strip for `vscode-remote:` and `vsls:` documents. Submit, Test, Solution, Description, and optional Star now execute directly in the clicking window with its own document URI and account.
+- Refresh remote/guest inline actions after editor switches, document opens, configuration changes, and bounded reconnect delays without registering a competing Live Share CodeLens provider or creating duplicate actions.
+- Extend pairing diagnostics with effective CodeLens, inlay-hint, and Live Share command-control settings plus both provider result sets.
+- Add VS Code 1.119 Extension Host regressions proving Remote/Live Share documents expose no remoted LeetCode CodeLens, exactly one four-action inline strip, local account commands, guest `vsls:` URIs, and repeatable clicks.
+
 ## 0.21.2
 
 - Recover native CodeLens after a Codespaces connection restore by issuing two bounded provider refreshes for visible, valid `file:`, `untitled:`, and `vscode-remote:` LeetCode documents.

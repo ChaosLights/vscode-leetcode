@@ -62,6 +62,47 @@ function assertCodeLensActions(codeLenses: vscode.CodeLens[] | undefined, expect
     }
 }
 
+function assertInlayHintActions(
+    inlayHints: vscode.InlayHint[] | undefined,
+    expectedUri: vscode.Uri,
+): vscode.Command[] {
+    assert.ok(inlayHints);
+    assert.strictEqual(inlayHints.length, 1);
+    const label: string | vscode.InlayHintLabelPart[] = inlayHints[0].label;
+    assert.ok(Array.isArray(label));
+    const commands: vscode.Command[] = (label as vscode.InlayHintLabelPart[])
+        .map((part: vscode.InlayHintLabelPart) => part.command)
+        .filter((command: vscode.Command | undefined): command is vscode.Command => Boolean(command));
+    assert.deepStrictEqual(
+        commands.map((command: vscode.Command) => command.title),
+        ["Submit", "Test", "Solution", "Description"],
+    );
+    assert.deepStrictEqual(
+        commands.map((command: vscode.Command) => command.command),
+        [
+            "leetcode.submitSolution",
+            "leetcode.testSolution",
+            "leetcode.showSolution",
+            "leetcode.previewProblem",
+        ],
+    );
+    for (const command of commands) {
+        const actionUri: vscode.Uri = command.arguments?.[0];
+        assert.strictEqual(actionUri.toString(), expectedUri.toString());
+        assert.strictEqual(actionUri.scheme, expectedUri.scheme);
+    }
+    return commands;
+}
+
+async function getInlayHints(document: vscode.TextDocument): Promise<vscode.InlayHint[] | undefined> {
+    const lastLine: vscode.TextLine = document.lineAt(document.lineCount - 1);
+    return vscode.commands.executeCommand<vscode.InlayHint[]>(
+        "vscode.executeInlayHintProvider",
+        document.uri,
+        new vscode.Range(0, 0, lastLine.lineNumber, lastLine.range.end.character),
+    );
+}
+
 async function waitFor(
     predicate: () => boolean,
     failureMessage: string,
@@ -642,11 +683,6 @@ export async function run(): Promise<void> {
             path.join(os.tmpdir(), `vscode-leetcode-codelens-${process.pid}.cpp`),
         );
         await vscode.workspace.fs.writeFile(localSolutionUri, Buffer.from(solutionText, "utf8"));
-        let remotedCodeLensRegistration: vscode.Disposable | undefined;
-        let remoteCountingRegistration: vscode.Disposable | undefined;
-        let remoteProviderCalls: number = 0;
-        let guestProviderCalls: number = 0;
-        let guestProviderReady: boolean = false;
         const remoteSolutionUri: vscode.Uri =
             vscode.Uri.parse("vscode-remote://probe/code/8.string-to-integer-atoi.cpp");
         remoteProvider.writeFile(
@@ -654,13 +690,17 @@ export async function run(): Promise<void> {
             Buffer.from(solutionText, "utf8"),
         );
         try {
-            const guestLocalCodeLenses: vscode.CodeLens[] | undefined =
+            const guestCodeLenses: vscode.CodeLens[] | undefined =
                 await vscode.commands.executeCommand<vscode.CodeLens[]>(
                     "vscode.executeCodeLensProvider",
                     solutionUri,
                     Number.MAX_VALUE,
                 );
-            assert.deepStrictEqual(guestLocalCodeLenses || [], []);
+            assert.deepStrictEqual(
+                guestCodeLenses || [],
+                [],
+                "The plugin must not create a remoted CodeLens that Live Share can reduce to 'no commands'.",
+            );
 
             await vscode.workspace.openTextDocument(localSolutionUri);
             const localCodeLenses: vscode.CodeLens[] | undefined =
@@ -690,96 +730,34 @@ export async function run(): Promise<void> {
             assert.ok(localEditor.selection.isEqual(localOriginalSelection));
             actionInvocations.length = 0;
 
-            remoteCountingRegistration = vscode.languages.registerCodeLensProvider(
-                { scheme: "vscode-remote" },
-                {
-                    provideCodeLenses: (): vscode.CodeLens[] => {
-                        remoteProviderCalls++;
-                        return [];
-                    },
-                },
-            );
             const remoteDocument: vscode.TextDocument =
                 await vscode.workspace.openTextDocument(remoteSolutionUri);
             await vscode.window.showTextDocument(remoteDocument, { preview: false });
-            await waitFor(
-                () => remoteProviderCalls > 0,
-                "The visible Codespaces document did not request CodeLens providers.",
-            );
-            const remoteCallsBeforeRecovery: number = remoteProviderCalls;
-            await waitFor(
-                () => remoteProviderCalls > remoteCallsBeforeRecovery,
-                "The bounded Codespaces CodeLens recovery did not refresh the visible editor.",
-                3000,
-            );
             const remoteCodeLenses: vscode.CodeLens[] | undefined =
                 await vscode.commands.executeCommand<vscode.CodeLens[]>(
                     "vscode.executeCodeLensProvider",
                     remoteSolutionUri,
                     Number.MAX_VALUE,
                 );
-            assertCodeLensActions(remoteCodeLenses, remoteSolutionUri);
-
-            remotedCodeLensRegistration = vscode.languages.registerCodeLensProvider(
-                { scheme: "vsls" },
-                {
-                    provideCodeLenses: (document: vscode.TextDocument): vscode.CodeLens[] => {
-                        guestProviderCalls++;
-                        if (!guestProviderReady) {
-                            return [];
-                        }
-                        return (localCodeLenses || []).map((codeLens: vscode.CodeLens) =>
-                            new vscode.CodeLens(codeLens.range, {
-                                title: codeLens.command?.title || "",
-                                command: codeLens.command?.command || "",
-                                tooltip: codeLens.command?.tooltip,
-                                arguments: [
-                                    document.uri,
-                                    new vscode.Position(
-                                        codeLens.command?.arguments?.[1].line,
-                                        codeLens.command?.arguments?.[1].character,
-                                    ),
-                                    [],
-                                ],
-                            }));
-                    },
-                },
-            );
-            const guestCodeLenses: vscode.CodeLens[] | undefined =
-                await vscode.commands.executeCommand<vscode.CodeLens[]>(
-                    "vscode.executeCodeLensProvider",
-                    solutionUri,
-                    Number.MAX_VALUE,
-                );
-            assert.deepStrictEqual(
-                guestCodeLenses,
-                [],
-                "The guest fixture must reproduce Live Share's transient empty first result.",
-            );
+            assert.deepStrictEqual(remoteCodeLenses || [], []);
+            const remoteHintCommands: vscode.Command[] =
+                assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri);
+            codeLensController.refresh();
+            assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri);
 
             const guestEditor: vscode.TextEditor =
                 await vscode.window.showTextDocument(solutionDocument, { preview: false });
             const originalSelection: vscode.Selection = new vscode.Selection(2, 0, 2, 0);
             await setEditorSelection(guestEditor, originalSelection);
-            await waitFor(
-                () => guestProviderCalls > 1,
-                "The visible Live Share document did not make its initial empty provider request.",
-            );
-            await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            guestProviderReady = true;
-            const guestCallsBeforeRecovery: number = guestProviderCalls;
-            await waitFor(
-                () => guestProviderCalls > guestCallsBeforeRecovery,
-                "The bounded Live Share CodeLens recovery did not retry the remoted provider.",
-                3000,
-            );
-            const recoveredGuestCodeLenses: vscode.CodeLens[] | undefined =
+            const guestCodeLensesAfterOpen: vscode.CodeLens[] | undefined =
                 await vscode.commands.executeCommand<vscode.CodeLens[]>(
                     "vscode.executeCodeLensProvider",
                     solutionUri,
                     Number.MAX_VALUE,
                 );
-            assertCodeLensActions(recoveredGuestCodeLenses, solutionUri);
+            assert.deepStrictEqual(guestCodeLensesAfterOpen || [], []);
+            const guestHintCommands: vscode.Command[] =
+                assertInlayHintActions(await getInlayHints(solutionDocument), solutionUri);
 
             const expectedCommands: string[] = [
                 "leetcode.submitSolution",
@@ -787,21 +765,19 @@ export async function run(): Promise<void> {
                 "leetcode.showSolution",
                 "leetcode.previewProblem",
             ];
-            for (let index: number = 0; index < (recoveredGuestCodeLenses || []).length; index++) {
-                const command: vscode.Command | undefined = recoveredGuestCodeLenses?.[index].command;
-                assert.ok(command);
+            for (let index: number = 0; index < guestHintCommands.length; index++) {
+                const command: vscode.Command = guestHintCommands[index];
                 await vscode.commands.executeCommand(command.command, ...(command.arguments || []));
                 await waitFor(
                     () => actionInvocations.length === index + 1,
-                    `Guest CodeLens action ${index} did not execute locally.`,
+                    `Guest inline action ${index} did not execute locally.`,
                 );
                 assert.strictEqual(actionInvocations[index].command, expectedCommands[index]);
                 assert.strictEqual(actionInvocations[index].uri.toString(), solutionUri.toString());
                 assert.ok(guestEditor.selection.isEqual(originalSelection));
             }
 
-            const repeatCommand: vscode.Command | undefined = recoveredGuestCodeLenses?.[1].command;
-            assert.ok(repeatCommand);
+            const repeatCommand: vscode.Command = guestHintCommands[1];
             await vscode.commands.executeCommand(
                 repeatCommand.command,
                 ...(repeatCommand.arguments || []),
@@ -818,6 +794,7 @@ export async function run(): Promise<void> {
                 actionInvocations[actionInvocations.length - 1].uri.toString(),
                 solutionUri.toString(),
             );
+            assert.strictEqual(remoteHintCommands.length, guestHintCommands.length);
 
             const fakeMarkerUri: vscode.Uri = vscode.Uri.file(
                 path.join(os.tmpdir(), `vscode-leetcode-fake-codelens-${process.pid}.cpp`),
@@ -858,8 +835,6 @@ export async function run(): Promise<void> {
                 await vscode.workspace.fs.delete(fakeMarkerUri);
             }
         } finally {
-            remoteCountingRegistration?.dispose();
-            remotedCodeLensRegistration?.dispose();
             for (const actionCommandRegistration of actionCommandRegistrations) {
                 actionCommandRegistration.dispose();
             }

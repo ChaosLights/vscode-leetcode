@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.21.2",
+    "version": "0.21.3",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -716,7 +716,7 @@
                                 "Show the problem description page."
                             ]
                         },
-                        "description": "Customize the Live Share-safe CodeLens shortcuts and fallback action menu. These actions always run with this window's LeetCode account."
+                        "description": "Customize local CodeLens, Remote/Live Share inline actions, and fallback action menus. These actions always run with this window's LeetCode account."
                     },
                     "leetcode.enableSideMode": {
                         "type": "boolean",

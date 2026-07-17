@@ -19,8 +19,8 @@ const leetCodeCodeLensTitles: ReadonlySet<string> = new Set<string>([
     "Description",
 ]);
 
-function formatConfigurationValue(value: boolean | undefined): string {
-    return value === undefined ? "unset" : value.toString();
+function formatConfigurationValue(value: unknown): string {
+    return value === undefined || value === null ? "unset" : value.toString();
 }
 
 async function getCodeLensProviderDescription(
@@ -58,6 +58,46 @@ async function getCodeLensProviderDescription(
     }
 }
 
+async function getInlayHintProviderDescription(
+    document: vscode.TextDocument,
+): Promise<string> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+        const lastLine: vscode.TextLine = document.lineAt(document.lineCount - 1);
+        const inlayHints: vscode.InlayHint[] | undefined = await Promise.race([
+            vscode.commands.executeCommand<vscode.InlayHint[]>(
+                "vscode.executeInlayHintProvider",
+                document.uri,
+                new vscode.Range(0, 0, lastLine.lineNumber, lastLine.range.end.character),
+            ),
+            new Promise<undefined>((resolve: (value: undefined) => void) => {
+                timeout = setTimeout(() => resolve(undefined), codeLensDiagnosticTimeoutMs);
+            }),
+        ]);
+        if (!inlayHints) {
+            return `inlineProvider=timeout-after-${codeLensDiagnosticTimeoutMs}ms`;
+        }
+        const actions: string[] = [];
+        for (const hint of inlayHints) {
+            if (!Array.isArray(hint.label)) {
+                continue;
+            }
+            for (const part of hint.label) {
+                if (part.command && leetCodeCodeLensTitles.has(part.command.title)) {
+                    actions.push(part.command.title);
+                }
+            }
+        }
+        return `inlineProviderTotal=${inlayHints.length}, inlineActions=${actions.join("|") || "none"}`;
+    } catch (error) {
+        return `inlineProvider=error:${error instanceof Error ? error.name : "unknown"}`;
+    } finally {
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+    }
+}
+
 export async function diagnosePairing(context: vscode.ExtensionContext): Promise<void> {
     const extensionKind: string = context.extension.extensionKind === vscode.ExtensionKind.UI ? "ui" : "workspace";
     const liveShareExtension: vscode.Extension<any> | undefined =
@@ -78,6 +118,16 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
         vscode.workspace.getConfiguration("editor", configurationScope);
     const codeLensEnabled: boolean = editorConfiguration.get<boolean>("codeLens", true);
     const codeLensInspection = editorConfiguration.inspect<boolean>("codeLens");
+    const inlayConfiguration: vscode.WorkspaceConfiguration =
+        vscode.workspace.getConfiguration("editor.inlayHints", configurationScope);
+    const inlayHintsEnabled: string = inlayConfiguration.get<string>("enabled", "on");
+    const inlayHintsInspection = inlayConfiguration.inspect<string>("enabled");
+    const liveShareLanguageConfiguration: vscode.WorkspaceConfiguration =
+        vscode.workspace.getConfiguration("liveshare.languages", configurationScope);
+    const allowGuestCommandControl: boolean =
+        liveShareLanguageConfiguration.get<boolean>("allowGuestCommandControl", false);
+    const allowGuestCommandInspection =
+        liveShareLanguageConfiguration.inspect<boolean>("allowGuestCommandControl");
     const metadata: ICodeLensDocumentMetadata | undefined =
         activeDocument ? findCodeLensDocumentMetadata(activeDocument) : undefined;
 
@@ -111,9 +161,23 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
         `workspaceLanguage=${formatConfigurationValue(codeLensInspection?.workspaceLanguageValue)}, ` +
         `workspaceFolderLanguage=${formatConfigurationValue(codeLensInspection?.workspaceFolderLanguageValue)}.`,
     );
+    leetCodeChannel.appendLine(
+        `[diagnostics] inlayHints=${inlayHintsEnabled}, ` +
+        `global=${formatConfigurationValue(inlayHintsInspection?.globalValue)}, ` +
+        `workspace=${formatConfigurationValue(inlayHintsInspection?.workspaceValue)}, ` +
+        `workspaceFolder=${formatConfigurationValue(inlayHintsInspection?.workspaceFolderValue)}.`,
+    );
+    leetCodeChannel.appendLine(
+        `[diagnostics] allowGuestCommandControl=${allowGuestCommandControl}, ` +
+        `global=${formatConfigurationValue(allowGuestCommandInspection?.globalValue)}, ` +
+        `workspace=${formatConfigurationValue(allowGuestCommandInspection?.workspaceValue)}.`,
+    );
     if (activeDocument && metadata) {
         leetCodeChannel.appendLine(
             `[diagnostics] ${await getCodeLensProviderDescription(activeDocument, metadata)}.`,
+        );
+        leetCodeChannel.appendLine(
+            `[diagnostics] ${await getInlayHintProviderDescription(activeDocument)}.`,
         );
     }
     try {

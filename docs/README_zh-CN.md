@@ -96,7 +96,7 @@
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
 </p>
 
-- 插件会在生成题解的 `@lc code=end` 旁显示五种原生单击 CodeLens 快捷方式：
+- 插件会在生成题解的 `@lc code=end` 旁显示五种单击快捷方式：
 
   - `Submit`: 提交你的答案至 LeetCode；
   - `Test`: 用给定的测试用例测试你的答案；
@@ -104,9 +104,9 @@
   - `Solution`: 显示该问题的高票解答；
   - `Description`: 显示该问题的题目描述。
 
-  > 主机/本地文件由本插件生成 CodeLens；Live Share 来宾只接收主机转发的一套，不会再生成第二套。Codespaces 重连或 Live Share 首次同步返回空时，插件会做有界重取，但不会注册一套匹配的来宾 provider。点击会在来宾本地还原成操作，因此仍使用点击窗口登录的 LeetCode 账号。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
+  > 普通本地文件使用 CodeLens；Codespaces 和 Live Share 来宾文档在 `@lc code=end` 旁显示一套本地 inline actions。它们不再经过 Live Share 的主机 CodeLens 转发，因此不会变成 `no commands`、不会重复，并始终使用点击窗口登录的 LeetCode 账号。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
 
-  > 如果快捷入口被隐藏，请将 `editor.codeLens` 设为 `true`。编辑器标题栏火箭、右键 `LeetCode` 菜单和命令面板仍可作为兜底入口。
+  > 普通本地文件若隐藏入口，请将 `editor.codeLens` 设为 `true`；Codespaces/Live Share 若隐藏入口，请将 `editor.inlayHints.enabled` 设为 `"on"`。编辑器标题栏火箭、右键 `LeetCode` 菜单和命令面板仍可作为兜底入口。
 
 ---
 
@@ -139,7 +139,7 @@
 | `leetcode.workspaceFolder`        | 指定保存文件的工作区目录                                                                                                                                                                                                                                                                                      | `""`               |
 | `leetcode.filePath`               | 指定生成题目文件的相对文件夹路径名和文件名。点击查看[更多详细用法](https://github.com/LeetCode-OpenSource/vscode-leetcode/wiki/%E8%87%AA%E5%AE%9A%E4%B9%89%E9%A2%98%E7%9B%AE%E6%96%87%E4%BB%B6%E7%9A%84%E7%9B%B8%E5%AF%B9%E6%96%87%E4%BB%B6%E5%A4%B9%E8%B7%AF%E5%BE%84%E5%92%8C%E6%96%87%E4%BB%B6%E5%90%8D)。 |                    |
 | `leetcode.enableStatusBar`        | 指定是否在 VS Code 下方显示插件状态栏。                                                                                                                                                                                                                                                                       | `true`             |
-| `leetcode.editor.shortcuts`       | 指定 CodeLens 和兜底操作菜单中的操作。可用值有：`submit`、`test`、`star`、`solution`、`description`。                                                                                                                                                                                                        | `["submit", "test", "solution", "description"]` |
+| `leetcode.editor.shortcuts`       | 指定本地 CodeLens、Remote/Live Share inline actions 和兜底操作菜单中的操作。可用值有：`submit`、`test`、`star`、`solution`、`description`。                                                                                                                                                                  | `["submit", "test", "solution", "description"]` |
 | `leetcode.enableSideMode`         | 指定在解决一道题时，是否将`问题预览`、`高票答案`与`提交结果`窗口集中在编辑器的第二栏。                                                                                                                                                                                                                        | `true`             |
 | `leetcode.nodePath`               | 使用 `node` 调用外部 Node.js 20+ 子进程；也可以填写可执行文件完整路径。WSL 模式使用 WSL 内的 Node.js 20+。                                                                                                                                                                                             | `node`             |
 | `leetcode.showCommentDescription` | 指定是否要在注释中显示题干。                                                                                                                                                                                                                                                                                  | `false`            |
