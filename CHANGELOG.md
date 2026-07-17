@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.13
+
+- Finish the `Fetching user data...` progress as soon as login validation and state persistence complete.
+- Show the successful-login notification only after the progress operation has closed, without waiting for the notification to be dismissed.
+
 ## 0.19.12
 
 - Complete interactive Cookie login as soon as the legacy CLI prints its success marker, close the prompt's stdin, and prevent a valid login from being misreported as a timeout.

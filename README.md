@@ -15,7 +15,7 @@
 - Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.19.12 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.12) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.19.13 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.19.13) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

@@ -55,20 +55,23 @@ class LeetCodeManager extends EventEmitter {
 
     public async handleUriSignIn(uri: vscode.Uri): Promise<void> {
         try {
-            await vscode.window.withProgress(
+            const username: string | undefined = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification },
-                async (progress: vscode.Progress<{}>) => {
+                async (progress: vscode.Progress<{}>): Promise<string | undefined> => {
                     progress.report({ message: "Fetching user data..." });
                     const queryParams: { [key: string]: string } = parseQuery(uri.query);
                     const cookie: string = queryParams["cookie"];
                     if (!cookie) {
                         await promptForOpenOutputChannel("Failed to get cookie. Please log in again", DialogType.error);
-                        return;
+                        return undefined;
                     }
 
-                    await this.updateUserStatusWithCookie(cookie);
+                    return await this.updateUserStatusWithCookie(cookie);
                 },
             );
+            if (username) {
+                void vscode.window.showInformationMessage(`Successfully signed in as ${username}.`);
+            }
         } catch (error) {
             leetCodeChannel.appendLine(`Web authorization failed: ${this.getErrorMessage(error)}`);
             await promptForOpenOutputChannel(
@@ -78,7 +81,7 @@ class LeetCodeManager extends EventEmitter {
         }
     }
 
-    public async handleInputCookieSignIn(): Promise<void> {
+    public async handleInputCookieSignIn(): Promise<string | undefined> {
         const cookie: string | undefined = await vscode.window.showInputBox({
             prompt: "Enter LeetCode Cookie",
             password: true,
@@ -87,9 +90,9 @@ class LeetCodeManager extends EventEmitter {
         });
 
         if (!cookie) {
-            return;
+            return undefined;
         }
-        await this.updateUserStatusWithCookie(cookie);
+        return await this.updateUserStatusWithCookie(cookie);
     }
 
     public async signIn(): Promise<void> {
@@ -118,10 +121,13 @@ class LeetCodeManager extends EventEmitter {
         }
 
         try {
-            await vscode.window.withProgress(
+            const username: string | undefined = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: "Fetching user data..." },
                 async () => this.handleInputCookieSignIn(),
             );
+            if (username) {
+                void vscode.window.showInformationMessage(`Successfully signed in as ${username}.`);
+            }
         } catch (error) {
             leetCodeChannel.appendLine(`Cookie login failed: ${this.getErrorMessage(error)}`);
             await promptForOpenOutputChannel(
@@ -276,7 +282,7 @@ class LeetCodeManager extends EventEmitter {
         this.setSignedOut();
     }
 
-    private async updateUserStatusWithCookie(cookie: string): Promise<void> {
+    private async updateUserStatusWithCookie(cookie: string): Promise<string> {
         const data: UserDataType = await queryUserData(cookie);
         if (!data || !data.isSignedIn || !data.username) {
             throw new Error("The saved LeetCode cookie is invalid or expired.");
@@ -287,7 +293,7 @@ class LeetCodeManager extends EventEmitter {
         );
         await this.establishCliSession(cookie, data, true);
         await this.saveVerifiedLogin(cookie, data);
-        await vscode.window.showInformationMessage(`Successfully signed in as ${data.username}.`);
+        return data.username;
     }
 
     private async restoreLoginFromStoredCookie(): Promise<boolean> {
