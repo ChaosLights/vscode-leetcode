@@ -2,7 +2,7 @@
 
 1. Update `package.json`, `package-lock.json`, `CHANGELOG.md`, and the pinned links in the Live Share documentation.
 2. Install exactly the locked dependencies with `npm ci`.
-3. Run `npm run lint`, `npm test`, and `npm run test:vscode`. The VS Code integration suite must pass local CodeLens, Remote/Live Share local inline actions, deletion-event recreation, stale-cache propagation, no-overwrite/staging ownership, symlink, and read-only cases.
+3. Run `npm run lint`, `npm test`, and `npm run test:vscode`. The VS Code integration suite must pass local CodeLens, Remote/Live Share local actions (including footer-relative layout and command readiness), deletion-event recreation, stale-cache propagation, no-overwrite/staging ownership, symlink, and read-only cases.
 4. Run `npm audit --audit-level=high`. A release must have no high or critical findings; document any unfixable lower-severity advisory inherited from the legacy CLI.
 5. Package with the pinned tool version:
 

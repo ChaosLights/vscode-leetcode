@@ -65,11 +65,21 @@ function assertCodeLensActions(codeLenses: vscode.CodeLens[] | undefined, expect
 function assertInlayHintActions(
     inlayHints: vscode.InlayHint[] | undefined,
     expectedUri: vscode.Uri,
+    expectedLine: number,
 ): vscode.Command[] {
     assert.ok(inlayHints);
     assert.strictEqual(inlayHints.length, 1);
     const label: string | vscode.InlayHintLabelPart[] = inlayHints[0].label;
     assert.ok(Array.isArray(label));
+    assert.strictEqual(inlayHints[0].position.line, expectedLine);
+    assert.strictEqual(inlayHints[0].position.character, 0);
+    assert.strictEqual(inlayHints[0].paddingLeft, false);
+    assert.strictEqual(
+        (label as vscode.InlayHintLabelPart[])
+            .map((part: vscode.InlayHintLabelPart) => part.value)
+            .join(""),
+        "Submit · Test · Solution · Description",
+    );
     const commands: vscode.Command[] = (label as vscode.InlayHintLabelPart[])
         .map((part: vscode.InlayHintLabelPart) => part.command)
         .filter((command: vscode.Command | undefined): command is vscode.Command => Boolean(command));
@@ -663,7 +673,6 @@ export async function run(): Promise<void> {
             "created",
         );
         const solutionDocument: vscode.TextDocument = await vscode.workspace.openTextDocument(solutionUri);
-        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController([1000]);
         const actionInvocations: Array<{ command: string; uri: vscode.Uri }> = [];
         const actionCommandRegistrations: vscode.Disposable[] = [
             vscode.commands.registerCommand("leetcode.submitSolution", (uri: vscode.Uri) => {
@@ -679,6 +688,7 @@ export async function run(): Promise<void> {
                 actionInvocations.push({ command: "leetcode.previewProblem", uri });
             }),
         ];
+        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController([1000]);
         const localSolutionUri: vscode.Uri = vscode.Uri.file(
             path.join(os.tmpdir(), `vscode-leetcode-codelens-${process.pid}.cpp`),
         );
@@ -741,9 +751,9 @@ export async function run(): Promise<void> {
                 );
             assert.deepStrictEqual(remoteCodeLenses || [], []);
             const remoteHintCommands: vscode.Command[] =
-                assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri);
+                assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri, 5);
             codeLensController.refresh();
-            assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri);
+            assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri, 5);
 
             const guestEditor: vscode.TextEditor =
                 await vscode.window.showTextDocument(solutionDocument, { preview: false });
@@ -757,7 +767,7 @@ export async function run(): Promise<void> {
                 );
             assert.deepStrictEqual(guestCodeLensesAfterOpen || [], []);
             const guestHintCommands: vscode.Command[] =
-                assertInlayHintActions(await getInlayHints(solutionDocument), solutionUri);
+                assertInlayHintActions(await getInlayHints(solutionDocument), solutionUri, 5);
 
             const expectedCommands: string[] = [
                 "leetcode.submitSolution",

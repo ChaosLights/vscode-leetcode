@@ -96,7 +96,7 @@
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
 </p>
 
-- 插件会在生成题解的 `@lc code=end` 旁显示五种单击快捷方式：
+- 插件会在生成题解的 `@lc code=end` 附近显示五种单击快捷方式：
 
   - `Submit`: 提交你的答案至 LeetCode；
   - `Test`: 用给定的测试用例测试你的答案；
@@ -104,7 +104,7 @@
   - `Solution`: 显示该问题的高票解答；
   - `Description`: 显示该问题的题目描述。
 
-  > 普通本地文件使用 CodeLens；Codespaces 和 Live Share 来宾文档在 `@lc code=end` 旁显示一套本地 inline actions。它们不再经过 Live Share 的主机 CodeLens 转发，因此不会变成 `no commands`、不会重复，并始终使用点击窗口登录的 LeetCode 账号。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
+  > 普通本地文件使用 CodeLens；Codespaces 和 Live Share 来宾文档在 `@lc code=end` 下方的空行显示一套紧凑的本地操作。它们不再经过 Live Share 的主机 CodeLens 转发，因此不会变成 `no commands`、不会重复，并始终使用点击窗口登录的 LeetCode 账号。所有命令会先完成注册再显示操作条，避免窗口刚恢复时第一次点击提示命令不存在。你可以通过 `leetcode.editor.shortcuts` 配置需要激活的操作；默认启用 `Submit`、`Test`、`Solution` 和 `Description`。
 
   > 普通本地文件若隐藏入口，请将 `editor.codeLens` 设为 `true`；Codespaces/Live Share 若隐藏入口，请将 `editor.inlayHints.enabled` 设为 `"on"`。编辑器标题栏火箭、右键 `LeetCode` 菜单和命令面板仍可作为兜底入口。
 
