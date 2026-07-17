@@ -11,7 +11,12 @@ import { leetCodeExecutor } from "./leetCodeExecutor";
 import { queryUserData } from "./request/query-user-data";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
 import { countCliProblems } from "./utils/cliSessionUtils";
-import { didCliLoginSucceed, ICliLoginOutputState, inspectCliLoginOutput } from "./utils/loginOutputUtils";
+import {
+    determineCliLoginOutputAction,
+    didCliLoginSucceed,
+    ICliLoginOutputState,
+    inspectCliLoginOutput,
+} from "./utils/loginOutputUtils";
 import * as settingUtils from "./utils/settingUtils";
 import { parseQuery } from "./utils/toolUtils";
 import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils";
@@ -199,16 +204,26 @@ class LeetCodeManager extends EventEmitter {
                 output += text;
                 leetCodeChannel.append(text);
                 const state: ICliLoginOutputState = inspectCliLoginOutput(output);
-                if (state.failed) {
-                    childProc.stdin?.end();
-                    childProc.kill();
-                    rejectOnce(new Error("The LeetCode CLI rejected the cookie."));
-                } else if (state.requestsLogin && !sentLogin) {
-                    sentLogin = true;
-                    childProc.stdin?.write(`${name}\n`);
-                } else if (state.requestsCookie && !sentCookie) {
-                    sentCookie = true;
-                    childProc.stdin?.write(`${cookie}\n`);
+                switch (determineCliLoginOutputAction(state, sentLogin, sentCookie)) {
+                    case "fail":
+                        childProc.stdin?.end();
+                        childProc.kill();
+                        rejectOnce(new Error("The LeetCode CLI rejected the cookie."));
+                        break;
+                    case "succeed":
+                        childProc.stdin?.end();
+                        resolveOnce();
+                        break;
+                    case "sendLogin":
+                        sentLogin = true;
+                        childProc.stdin?.write(`${name}\n`);
+                        break;
+                    case "sendCookie":
+                        sentCookie = true;
+                        childProc.stdin?.write(`${cookie}\n`);
+                        break;
+                    default:
+                        break;
                 }
             });
 

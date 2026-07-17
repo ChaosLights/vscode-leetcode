@@ -8,6 +8,8 @@ export interface ICliLoginOutputState {
     succeeded: boolean;
 }
 
+export type CliLoginOutputAction = "fail" | "none" | "sendCookie" | "sendLogin" | "succeed";
+
 export function inspectCliLoginOutput(output: string): ICliLoginOutputState {
     return {
         failed: /.*\[ERROR\].*/i.test(output),
@@ -15,6 +17,26 @@ export function inspectCliLoginOutput(output: string): ICliLoginOutputState {
         requestsLogin: /login:\s*/i.test(output),
         succeeded: /Successfully .*login as /i.test(output),
     };
+}
+
+export function determineCliLoginOutputAction(
+    state: ICliLoginOutputState,
+    sentLogin: boolean,
+    sentCookie: boolean,
+): CliLoginOutputAction {
+    if (state.failed) {
+        return "fail";
+    }
+    if (state.succeeded) {
+        return "succeed";
+    }
+    if (state.requestsLogin && !sentLogin) {
+        return "sendLogin";
+    }
+    if (state.requestsCookie && !sentCookie) {
+        return "sendCookie";
+    }
+    return "none";
 }
 
 export function didCliLoginSucceed(

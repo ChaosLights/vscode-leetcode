@@ -3,7 +3,11 @@ const {
     resolveRemoteWorkspaceRelativePath,
     resolveUserWorkspaceFolder,
 } = require("../out/src/utils/workspacePathUtils");
-const { didCliLoginSucceed, inspectCliLoginOutput } = require("../out/src/utils/loginOutputUtils");
+const {
+    determineCliLoginOutputAction,
+    didCliLoginSucceed,
+    inspectCliLoginOutput,
+} = require("../out/src/utils/loginOutputUtils");
 const { countCliProblems } = require("../out/src/utils/cliSessionUtils");
 
 assert.strictEqual(
@@ -46,6 +50,38 @@ assert.strictEqual(
     true,
 );
 assert.strictEqual(inspectCliLoginOutput("[ERROR] session expired").failed, true);
+assert.strictEqual(
+    determineCliLoginOutputAction(
+        inspectCliLoginOutput("login: wangchu\ncookie: value\nSuccessfully cookie login as wangchu"),
+        true,
+        true,
+    ),
+    "succeed",
+);
+assert.strictEqual(
+    determineCliLoginOutputAction(
+        inspectCliLoginOutput("login: wangchu\ncookie: value\nSuccessfully cookie login as wangchu"),
+        false,
+        false,
+    ),
+    "succeed",
+);
+assert.strictEqual(
+    determineCliLoginOutputAction(inspectCliLoginOutput("login: "), false, false),
+    "sendLogin",
+);
+assert.strictEqual(
+    determineCliLoginOutputAction(inspectCliLoginOutput("login: wangchu\ncookie: "), true, false),
+    "sendCookie",
+);
+assert.strictEqual(
+    determineCliLoginOutputAction(
+        inspectCliLoginOutput("Successfully cookie login as wangchu\n[ERROR] rejected"),
+        true,
+        true,
+    ),
+    "fail",
+);
 assert.strictEqual(
     didCliLoginSucceed(0, inspectCliLoginOutput("login: user\ncookie: ")),
     false,

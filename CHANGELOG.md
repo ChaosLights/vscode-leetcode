@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.19.12
+
+- Complete interactive Cookie login as soon as the legacy CLI prints its success marker, close the prompt's stdin, and prevent a valid login from being misreported as a timeout.
+- Add regression coverage ensuring the terminal success marker takes precedence over the cumulative `login:` and `cookie:` prompts.
+
 ## 0.19.11
 
 - Restore the official extension's external `node` child-process runtime for every bundled CLI command; remove the `Code.exe` and Electron Worker execution paths introduced after v0.19.2.
