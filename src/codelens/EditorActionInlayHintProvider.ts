@@ -26,7 +26,18 @@ export class EditorActionInlayHintProvider implements vscode.InlayHintsProvider,
         if (!metadata) {
             return [];
         }
-        const position: vscode.Position = document.lineAt(metadata.footerLine).range.end;
+        const footerLine: vscode.TextLine = document.lineAt(metadata.footerLine);
+        const lineAfterFooter: vscode.TextLine | undefined =
+            metadata.footerLine + 1 < document.lineCount
+                ? document.lineAt(metadata.footerLine + 1)
+                : undefined;
+        // Generated solutions end with an empty line after @lc code=end. Put the
+        // local action strip there so it keeps the compact, separate-line layout
+        // of CodeLens without forwarding commands through Live Share. Older
+        // files without that trailing line safely fall back to the footer end.
+        const position: vscode.Position = lineAfterFooter?.isEmptyOrWhitespace
+            ? lineAfterFooter.range.end
+            : footerLine.range.end;
         if (!range.contains(position)) {
             return [];
         }
@@ -39,7 +50,7 @@ export class EditorActionInlayHintProvider implements vscode.InlayHintsProvider,
         const parts: vscode.InlayHintLabelPart[] = [];
         actions.forEach((action: IEditorAction, index: number) => {
             if (index > 0) {
-                parts.push(new vscode.InlayHintLabelPart("  ·  "));
+                parts.push(new vscode.InlayHintLabelPart(" · "));
             }
             const part: vscode.InlayHintLabelPart =
                 new vscode.InlayHintLabelPart(action.codeLensTitle);
@@ -57,7 +68,7 @@ export class EditorActionInlayHintProvider implements vscode.InlayHintsProvider,
             parts,
             vscode.InlayHintKind.Type,
         );
-        hint.paddingLeft = true;
+        hint.paddingLeft = false;
         return [hint];
     }
 

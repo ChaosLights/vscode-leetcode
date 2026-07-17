@@ -59,8 +59,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
 
         leetCodeTreeDataProvider.initialize(context);
-        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController();
+        let codeLensController: LiveShareCodeLensController | undefined;
 
+        // Register every clickable command before exposing CodeLens or inlay
+        // actions. A restored Remote/Live Share editor can request and click an
+        // inlay action immediately during activation; publishing the provider
+        // first leaves a short window where VS Code reports the command missing.
         context.subscriptions.push(
             leetCodeStatusBarController,
             leetCodePreviewProvider,
@@ -68,10 +72,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             leetCodeSolutionProvider,
             markdownEngine,
             editorActionController,
-            codeLensController,
             workspaceFileDeletionTracker.start(),
             explorerNodeManager,
-            leetCodeTreeDataProvider.onDidChangeTreeData(() => codeLensController.refresh()),
             vscode.window.registerFileDecorationProvider(leetCodeTreeItemDecorationProvider),
             vscode.window.createTreeView("leetCodeExplorer", { treeDataProvider: leetCodeTreeDataProvider, showCollapseAll: true }),
             vscode.commands.registerCommand("leetcode.deleteCache", () => cache.deleteCache()),
@@ -90,14 +92,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             vscode.commands.registerCommand("leetcode.switchDefaultLanguage", () => switchDefaultLanguage()),
             vscode.commands.registerCommand("leetcode.addFavorite", async (node: LeetCodeNode) => {
                 await star.addFavorite(node);
-                codeLensController.refresh();
+                codeLensController?.refresh();
             }),
             vscode.commands.registerCommand("leetcode.removeFavorite", async (node: LeetCodeNode) => {
                 await star.removeFavorite(node);
-                codeLensController.refresh();
+                codeLensController?.refresh();
             }),
             vscode.commands.registerCommand("leetcode.problems.sort", () => plugin.switchSortingStrategy()),
             vscode.commands.registerCommand("leetcode.showEditorActions", (uri?: vscode.Uri) => editorActionController.show(uri))
+        );
+
+        codeLensController = new LiveShareCodeLensController();
+        context.subscriptions.push(
+            codeLensController,
+            leetCodeTreeDataProvider.onDidChangeTreeData(() => codeLensController?.refresh()),
         );
 
         await leetCodeExecutor.switchEndpoint(plugin.getLeetCodeEndpoint());

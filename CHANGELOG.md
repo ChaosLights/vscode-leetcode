@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.21.4
+
+- Move the Codespaces/Live Share local action strip to the empty line immediately below `@lc code=end`, matching CodeLens' compact separate-line presentation instead of appending controls to source text.
+- Reduce action separators from double padding to the compact `Submit · Test · Solution · Description` layout and remove the extra leading padding.
+- Register every clickable LeetCode command before exposing CodeLens or inlay providers, eliminating the restored-editor startup window that could report `Actual command not found` on the first click.
+- Extend the VS Code 1.119 regression to assert the exact line, column, padding, label spacing, local command IDs, and guest document URI.
+
 ## 0.21.3
 
 - Stop forwarding LeetCode CodeLens commands from Codespaces into Live Share. VS Code can preserve the lens range while losing a parameterized command between UI/Remote language-service hosts, which is rendered as the literal `no commands`.
