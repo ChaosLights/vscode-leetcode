@@ -1,5 +1,20 @@
 # Change Log
 
+## 0.20.0
+
+- Replace the private Live Share extension API and custom host RPC with VS Code's `workspace.fs` virtual-file API. Current Live Share now performs the write through its registered `vsls:` provider, enforces the actual guest's read/write access, and no longer requires both sides to expose a custom service.
+- Preserve an existing solution file when `Code Now` resolves to the same path, matching the upstream local-file behavior and preventing concurrent participants from erasing an answer.
+- Verify every new remote file after creation, retry bounded Live Share propagation delays, reject read-only or disconnected guests with an actionable message, cap templates, and refuse writes through symbolic-link folders.
+- Allow Test to read a selected `file:`, `vscode-remote:`, or `vsls:` test-case URI through `workspace.fs`; pass test cases as raw child-process arguments without obsolete shell quoting.
+- Serialize duplicate Code Now/Test/Submit operations, make CLI progress cancellable, add three-minute and 25 MB process safety limits, and write real error stacks to the LeetCode output channel.
+- Reuse the problem list obtained during login validation and serialize Explorer refreshes, removing the duplicated full problem-list request seen after login.
+- Isolate the legacy CLI session under this extension's VS Code global storage instead of sharing or deleting `~/.lc`; fix endpoint cleanup ordering and require Node.js 20 or newer.
+- Remove all telemetry, including username and workspace-path reporting.
+- Add `LeetCode: Diagnose Pairing`, available even when the Node.js/CLI requirement check fails, with credential-free host, version, trust, and workspace-writability diagnostics.
+- Sanitize LeetCode description HTML, use a nonce-based script policy, disable command URIs, constrain credential-bearing Axios requests to HTTPS LeetCode hosts, and add an expiring one-shot web-login callback gate.
+- Upgrade direct dependencies and compatible legacy CLI transitive dependencies. `npm audit` now has no high or critical findings; the deprecated CLI `request`/`uuid` chain leaves three moderate advisories with no upstream fix.
+- Run unit, external CLI, and VS Code virtual-filesystem integration tests on both Windows and Linux CI.
+
 ## 0.19.13
 
 - Finish the `Fetching user data...` progress as soon as login validation and state persistence complete.

@@ -9,31 +9,90 @@ interface IExecError extends Error {
     result?: string;
 }
 
-export async function executeCommand(command: string, args: string[], options: cp.SpawnOptions = { shell: true }): Promise<string> {
+const maxCommandOutputBytes: number = 25 * 1024 * 1024;
+const commandTimeoutMilliseconds: number = 3 * 60 * 1000;
+
+export async function executeCommand(
+    command: string,
+    args: string[],
+    options: cp.SpawnOptions = { shell: true },
+    cancellationToken?: vscode.CancellationToken,
+): Promise<string> {
     return new Promise((resolve: (res: string) => void, reject: (e: Error) => void): void => {
         let result: string = "";
+        let outputBytes: number = 0;
+        let settled: boolean = false;
 
         const childProc: cp.ChildProcess = spawnCommand(command, args, options);
+        let timeout: NodeJS.Timeout | undefined;
+        let cancellationListener: vscode.Disposable | undefined;
 
-        childProc.stdout?.on("data", (data: string | Buffer) => {
-            data = data.toString();
-            result = result.concat(data);
-            leetCodeChannel.append(data);
+        const disposeResources = (): void => {
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+            cancellationListener?.dispose();
+        };
+        const resolveOnce = (value: string): void => {
+            if (!settled) {
+                settled = true;
+                disposeResources();
+                resolve(value);
+            }
+        };
+        const rejectOnce = (error: Error): void => {
+            if (!settled) {
+                settled = true;
+                disposeResources();
+                reject(error);
+            }
+        };
+        timeout = setTimeout(() => {
+            childProc.kill();
+            rejectOnce(new Error("LeetCode CLI command timed out after 3 minutes."));
+        }, commandTimeoutMilliseconds);
+        cancellationListener = cancellationToken?.onCancellationRequested(() => {
+            childProc.kill();
+            rejectOnce(new Error("LeetCode CLI command was canceled."));
         });
 
-        childProc.stderr?.on("data", (data: string | Buffer) => leetCodeChannel.append(data.toString()));
+        childProc.stdout?.on("data", (data: string | Buffer) => {
+            const text: string = data.toString();
+            outputBytes += Buffer.byteLength(text, "utf8");
+            if (outputBytes > maxCommandOutputBytes) {
+                childProc.kill();
+                rejectOnce(new Error("LeetCode CLI output exceeded the 25 MB safety limit."));
+                return;
+            }
+            result = result.concat(text);
+            leetCodeChannel.append(text);
+        });
 
-        childProc.on("error", reject);
+        childProc.stderr?.on("data", (data: string | Buffer) => {
+            const text: string = data.toString();
+            outputBytes += Buffer.byteLength(text, "utf8");
+            if (outputBytes > maxCommandOutputBytes) {
+                childProc.kill();
+                rejectOnce(new Error("LeetCode CLI output exceeded the 25 MB safety limit."));
+                return;
+            }
+            leetCodeChannel.append(text);
+        });
+
+        childProc.on("error", rejectOnce);
 
         childProc.on("close", (code: number) => {
-            if (code !== 0 || result.indexOf("ERROR") > -1) {
-                const error: IExecError = new Error(`Command "${command} ${args.toString()}" failed with exit code "${code}".`);
+            if (settled) {
+                return;
+            }
+            if (code !== 0 || /^\s*(?:\[ERROR\]|ERROR\b)/m.test(result)) {
+                const error: IExecError = new Error(`LeetCode CLI command failed with exit code "${code}".`);
                 if (result) {
                     error.result = result; // leetcode-cli may print useful content by exit with error code
                 }
-                reject(error);
+                rejectOnce(error);
             } else {
-                resolve(result);
+                resolveOnce(result);
             }
         });
     });
@@ -47,19 +106,13 @@ export function spawnCommand(command: string, args: string[], options: cp.SpawnO
 }
 
 export async function executeCommandWithProgress(message: string, command: string, args: string[], options: cp.SpawnOptions = { shell: true }): Promise<string> {
-    let result: string = "";
-    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification }, async (p: vscode.Progress<{}>) => {
-        return new Promise<void>(async (resolve: () => void, reject: (e: Error) => void): Promise<void> => {
+    return await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, cancellable: true },
+        async (p: vscode.Progress<{}>, token: vscode.CancellationToken): Promise<string> => {
             p.report({ message });
-            try {
-                result = await executeCommand(command, args, options);
-                resolve();
-            } catch (e) {
-                reject(e);
-            }
-        });
-    });
-    return result;
+            return await executeCommand(command, args, options, token);
+        },
+    );
 }
 
 // Clone process.env, apply command-specific overrides, and add the configured HTTP proxy.

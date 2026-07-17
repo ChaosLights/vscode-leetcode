@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 import { commands, ViewColumn } from "vscode";
+import * as crypto from "crypto";
 import { getLeetCodeEndpoint } from "../commands/plugin";
 import { Endpoint, IProblem } from "../shared";
+import { sanitizeProblemHtml } from "../utils/problemHtmlUtils";
 import { ILeetCodeWebviewOption, LeetCodeWebview } from "./LeetCodeWebview";
 import { markdownEngine } from "./markdownEngine";
 
@@ -40,6 +42,7 @@ class LeetCodePreviewProvider extends LeetCodeWebview {
     }
 
     protected getWebviewContent(): string {
+        const nonce: string = crypto.randomBytes(16).toString("base64");
         const button: { element: string; script: string; style: string } = {
             element: `<button id="solve">Code Now</button>`,
             script: `const button = document.getElementById('solve');
@@ -91,7 +94,7 @@ class LeetCodePreviewProvider extends LeetCodeWebview {
             <!DOCTYPE html>
             <html>
             <head>
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; script-src vscode-resource: 'unsafe-inline'; style-src vscode-resource: 'unsafe-inline';"/>
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; script-src 'nonce-${nonce}'; style-src vscode-resource: 'unsafe-inline';"/>
                 ${markdownEngine.getStyles()}
                 ${!this.sideMode ? button.style : ""}
                 <style>
@@ -107,7 +110,7 @@ class LeetCodePreviewProvider extends LeetCodeWebview {
                 <hr />
                 ${links}
                 ${!this.sideMode ? button.element : ""}
-                <script>
+                <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
                     ${!this.sideMode ? button.script : ""}
                 </script>
@@ -164,7 +167,9 @@ class LeetCodePreviewProvider extends LeetCodeWebview {
             difficulty: difficulty.slice(2),
             likes: likes.split(": ")[1].trim(),
             dislikes: dislikes.split(": ")[1].trim(),
-            body: body.join("\n").replace(/<pre>[\r\n]*([^]+?)[\r\n]*<\/pre>/g, "<pre><code>$1</code></pre>"),
+            body: sanitizeProblemHtml(
+                body.join("\n").replace(/<pre>[\r\n]*([^]+?)[\r\n]*<\/pre>/g, "<pre><code>$1</code></pre>"),
+            ),
         };
     }
 

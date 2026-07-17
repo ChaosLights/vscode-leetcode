@@ -1,5 +1,6 @@
 const assert = require("assert");
 const {
+    getSafeTempFileExtension,
     resolveRemoteWorkspaceRelativePath,
     resolveUserWorkspaceFolder,
 } = require("../out/src/utils/workspacePathUtils");
@@ -9,6 +10,9 @@ const {
     inspectCliLoginOutput,
 } = require("../out/src/utils/loginOutputUtils");
 const { countCliProblems } = require("../out/src/utils/cliSessionUtils");
+const { prepareTestCaseArgument } = require("../out/src/utils/testCaseUtils");
+const { KeyedOperationLock } = require("../out/src/utils/operationLock");
+const { sanitizeProblemHtml } = require("../out/src/utils/problemHtmlUtils");
 
 assert.strictEqual(
     resolveUserWorkspaceFolder({ wucan: "code/wucan", wangchu: "code/wangchu" }, "wucan", "ignored"),
@@ -32,6 +36,10 @@ assert.strictEqual(
 );
 assert.strictEqual(resolveRemoteWorkspaceRelativePath("/workspaces/other", "/workspaces/lc", "lc", false), undefined);
 assert.strictEqual(resolveRemoteWorkspaceRelativePath("../outside", "/workspaces/lc", "lc", false), undefined);
+assert.strictEqual(getSafeTempFileExtension("/~0/code/user/1.two-sum.cpp"), ".cpp");
+assert.strictEqual(getSafeTempFileExtension("/~0/code/user/solution.PY"), ".PY");
+assert.strictEqual(getSafeTempFileExtension("/~0/code/user/solution.cpp:secret"), ".txt");
+assert.strictEqual(getSafeTempFileExtension("/~0/code/user/solution.very-long-extension"), ".txt");
 
 assert.deepStrictEqual(inspectCliLoginOutput("login: "), {
     failed: false,
@@ -98,5 +106,25 @@ assert.strictEqual(
     countCliProblems("    v [   1 ] Two Sum Easy (55.00 %)\n      [   2 ] Add Two Numbers Medium (45.00 %)\n"),
     2,
 );
+assert.strictEqual(prepareTestCaseArgument("[1,2]\r\n3"), "[1,2]\n3");
+assert.strictEqual(prepareTestCaseArgument("a \"quoted\" value"), "a \"quoted\" value");
+assert.ok(!prepareTestCaseArgument("[1,2]\\n3").startsWith("'"));
+
+const operationLock = new KeyedOperationLock();
+const testLease = operationLock.acquire("vsls:/solution.cpp", "test");
+assert.ok(testLease);
+assert.strictEqual(operationLock.getActiveOperation("vsls:/solution.cpp"), "test");
+assert.strictEqual(operationLock.acquire("vsls:/solution.cpp", "submit"), undefined);
+testLease.release();
+testLease.release();
+assert.ok(operationLock.acquire("vsls:/solution.cpp", "submit"));
+
+const sanitizedProblem = sanitizeProblemHtml(
+    '<p class="example">safe</p><img src="https://example.com/a.png" onerror="alert(1)">' +
+    '<script>alert(1)</script><a href="javascript:alert(1)">bad</a>',
+);
+assert.match(sanitizedProblem, /class="example"/);
+assert.match(sanitizedProblem, /https:\/\/example\.com\/a\.png/);
+assert.doesNotMatch(sanitizedProblem, /onerror|<script|javascript:/i);
 
 console.log("workspace path tests passed");

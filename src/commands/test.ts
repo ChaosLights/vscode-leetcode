@@ -1,19 +1,27 @@
 // Copyright (c) jdneo. All rights reserved.
 // Licensed under the MIT license.
 
-import * as fse from "fs-extra";
 import * as vscode from "vscode";
+import { leetCodeChannel } from "../leetCodeChannel";
 import { leetCodeExecutor } from "../leetCodeExecutor";
 import { leetCodeManager } from "../leetCodeManager";
 import { IQuickItemEx, UserStatus } from "../shared";
-import { isWindows, usingCmd } from "../utils/osUtils";
+import { IOperationLease, solutionOperationLock } from "../utils/operationLock";
+import { prepareTestCaseArgument } from "../utils/testCaseUtils";
 import { DialogType, promptForOpenOutputChannel, showFileSelectDialog } from "../utils/uiUtils";
 import { getActiveSolutionFile, IActiveSolutionFile } from "../utils/workspaceUtils";
-import * as wsl from "../utils/wslUtils";
 import { leetCodeSubmissionProvider } from "../webview/leetCodeSubmissionProvider";
 
 export async function testSolution(uri?: vscode.Uri): Promise<void> {
     let solutionFile: IActiveSolutionFile | undefined;
+    const operationKey: string = getOperationKey(uri);
+    const lease: IOperationLease | undefined = solutionOperationLock.acquire(operationKey, "test");
+    if (!lease) {
+        void vscode.window.showInformationMessage(
+            `A LeetCode ${solutionOperationLock.getActiveOperation(operationKey)} operation is already running for this file.`,
+        );
+        return;
+    }
     try {
         if (leetCodeManager.getStatus() === UserStatus.SignedOut) {
             return;
@@ -62,15 +70,21 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
                     ignoreFocusOut: true,
                 });
                 if (testString) {
-                    result = await leetCodeExecutor.testSolution(solutionFile.filePath, parseTestString(testString));
+                    result = await leetCodeExecutor.testSolution(
+                        solutionFile.filePath,
+                        prepareTestCaseArgument(testString),
+                    );
                 }
                 break;
             case ":file":
-                const testFile: vscode.Uri[] | undefined = await showFileSelectDialog(solutionFile.filePath);
+                const testFile: vscode.Uri[] | undefined = await showFileSelectDialog(solutionFile.sourceUri);
                 if (testFile && testFile.length) {
-                    const input: string = (await fse.readFile(testFile[0].fsPath, "utf-8")).trim();
+                    const input: string = Buffer.from(await vscode.workspace.fs.readFile(testFile[0])).toString("utf8").trim();
                     if (input) {
-                        result = await leetCodeExecutor.testSolution(solutionFile.filePath, parseTestString(input.replace(/\r?\n/g, "\\n")));
+                        result = await leetCodeExecutor.testSolution(
+                            solutionFile.filePath,
+                            prepareTestCaseArgument(input),
+                        );
                     } else {
                         vscode.window.showErrorMessage("The selected test file must not be empty.");
                     }
@@ -84,24 +98,24 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
         }
         leetCodeSubmissionProvider.show(result);
     } catch (error) {
+        leetCodeChannel.appendLine(`[Test] ${getErrorDetails(error)}`);
         await promptForOpenOutputChannel("Failed to test the solution. Please open the output channel for details.", DialogType.error);
     } finally {
         if (solutionFile) {
-            await solutionFile.dispose();
+            try {
+                await solutionFile.dispose();
+            } catch (error) {
+                leetCodeChannel.appendLine(`[Test cleanup] ${getErrorDetails(error)}`);
+            }
         }
+        lease.release();
     }
 }
 
-function parseTestString(test: string): string {
-    if (wsl.useWsl() || !isWindows()) {
-        return `'${test}'`;
-    }
+function getErrorDetails(error: any): string {
+    return error instanceof Error && error.stack ? error.stack : String(error);
+}
 
-    // In windows and not using WSL
-    if (usingCmd()) {
-        return `"${test.replace(/"/g, '\\"')}"`;
-    } else {
-        // Assume using PowerShell
-        return `'${test.replace(/"/g, '\\"')}'`;
-    }
+function getOperationKey(uri?: vscode.Uri): string {
+    return (uri || vscode.window.activeTextEditor?.document.uri)?.toString() || "active-document";
 }

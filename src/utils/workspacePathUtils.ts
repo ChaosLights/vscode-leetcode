@@ -7,6 +7,11 @@ export interface IUserWorkspaceFolderMap {
     [username: string]: string;
 }
 
+export function getSafeTempFileExtension(uriPath: string): string {
+    const extension: string = path.posix.extname(uriPath);
+    return /^\.[a-z0-9]{1,10}$/i.test(extension) ? extension : ".txt";
+}
+
 function normalizeSlashes(value: string): string {
     return value.replace(/\\/g, "/");
 }

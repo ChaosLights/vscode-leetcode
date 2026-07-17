@@ -39,7 +39,11 @@ export async function listProblems(): Promise<IProblem[]> {
 
 async function loadProblems(): Promise<IProblem[]> {
     const useEndpointTranslation: boolean = settingUtils.shouldUseEndpointTranslation();
-    const result: string = await leetCodeExecutor.listProblems(true, useEndpointTranslation);
+    const validatedResult: string | undefined = leetCodeExecutor.consumeValidatedProblemList();
+    const result: string = validatedResult || await leetCodeExecutor.listProblems(true, useEndpointTranslation);
+    if (validatedResult) {
+        leetCodeChannel.appendLine("[list] Reusing the problem list from CLI session validation.");
+    }
     const problems: IProblem[] = [];
     const lines: string[] = result.split("\n");
     const reg: RegExp = /^(.)\s(.{1,2})\s(.)\s\[\s*(\d*)\s*\]\s*(.*)\s*(Easy|Medium|Hard)\s*\((\s*\d+\.\d+ %)\)/;

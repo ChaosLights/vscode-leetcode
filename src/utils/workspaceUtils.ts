@@ -8,11 +8,12 @@ import * as vscode from "vscode";
 import { IQuickItemEx } from "../shared";
 import { getWorkspaceConfiguration } from "./settingUtils";
 import { showDirectorySelectDialog } from "./uiUtils";
-import { resolveRemoteWorkspaceRelativePath } from "./workspacePathUtils";
+import { getSafeTempFileExtension, resolveRemoteWorkspaceRelativePath } from "./workspacePathUtils";
 import * as wsl from "./wslUtils";
 
 export interface IActiveSolutionFile {
     filePath: string;
+    sourceUri: vscode.Uri;
     dispose(): Promise<void>;
 }
 
@@ -28,6 +29,8 @@ export function getSafeRelativePathSegments(relativePath: string): string[] {
         !slashPath ||
         path.posix.isAbsolute(slashPath) ||
         /^[a-z]:\//i.test(slashPath) ||
+        slashPath.length > 1024 ||
+        /[\0-\x1f]/.test(slashPath) ||
         rawSegments.some((segment: string) => segment === "." || segment === "..")
     ) {
         throw new Error(`LeetCode filePath must stay inside the shared workspace: ${relativePath}`);
@@ -195,18 +198,24 @@ export async function getActiveSolutionFile(uri?: vscode.Uri): Promise<IActiveSo
         const currentFilePath: string = document.uri.fsPath;
         return {
             filePath: wsl.useWsl() ? await wsl.toWslPath(currentFilePath) : currentFilePath,
+            sourceUri: document.uri,
             dispose: async (): Promise<void> => undefined,
         };
     }
 
+    const documentText: string = document.getText();
+    if (Buffer.byteLength(documentText, "utf8") > 5 * 1024 * 1024) {
+        throw new Error("The selected solution file exceeds the 5 MB safety limit.");
+    }
     const tempFolder: string = await fse.mkdtemp(path.join(os.tmpdir(), "vscode-leetcode-"));
-    const extension: string = path.posix.extname(document.uri.path) || ".txt";
+    const extension: string = getSafeTempFileExtension(document.uri.path);
     const tempFilePath: string = path.join(tempFolder, `solution${extension}`);
     try {
-        await fse.writeFile(tempFilePath, document.getText(), "utf8");
+        await fse.writeFile(tempFilePath, documentText, "utf8");
         const filePath: string = wsl.useWsl() ? await wsl.toWslPath(tempFilePath) : tempFilePath;
         return {
             filePath,
+            sourceUri: document.uri,
             dispose: async (): Promise<void> => fse.remove(tempFolder),
         };
     } catch (error) {

@@ -23,6 +23,7 @@ import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils
 
 class LeetCodeManager extends EventEmitter {
     private currentUser: string | undefined;
+    private pendingWebAuthorizationUntil: number = 0;
     private userStatus: UserStatus;
 
     constructor() {
@@ -54,6 +55,15 @@ class LeetCodeManager extends EventEmitter {
     }
 
     public async handleUriSignIn(uri: vscode.Uri): Promise<void> {
+        if (Date.now() > this.pendingWebAuthorizationUntil) {
+            leetCodeChannel.appendLine("[login] Rejected an unsolicited or expired web authorization callback.");
+            await promptForOpenOutputChannel(
+                "This LeetCode authorization request has expired. Start Sign In again from VS Code.",
+                DialogType.error,
+            );
+            return;
+        }
+        this.pendingWebAuthorizationUntil = 0;
         try {
             const username: string | undefined = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification },
@@ -61,7 +71,7 @@ class LeetCodeManager extends EventEmitter {
                     progress.report({ message: "Fetching user data..." });
                     const queryParams: { [key: string]: string } = parseQuery(uri.query);
                     const cookie: string = queryParams["cookie"];
-                    if (!cookie) {
+                    if (!cookie || cookie.length > 32768) {
                         await promptForOpenOutputChannel("Failed to get cookie. Please log in again", DialogType.error);
                         return undefined;
                     }
@@ -86,7 +96,12 @@ class LeetCodeManager extends EventEmitter {
             prompt: "Enter LeetCode Cookie",
             password: true,
             ignoreFocusOut: true,
-            validateInput: (value: string): string | undefined => value ? undefined : "Cookie must not be empty",
+            validateInput: (value: string): string | undefined => {
+                if (!value) {
+                    return "Cookie must not be empty";
+                }
+                return value.length <= 32768 ? undefined : "Cookie is unexpectedly large";
+            },
         });
 
         if (!cookie) {
@@ -116,6 +131,7 @@ class LeetCodeManager extends EventEmitter {
         }
 
         if (choice.value === "WebAuth") {
+            this.pendingWebAuthorizationUntil = Date.now() + 10 * 60 * 1000;
             openUrl(this.getAuthLoginUrl());
             return;
         }
@@ -314,7 +330,11 @@ class LeetCodeManager extends EventEmitter {
             leetCodeChannel.appendLine(
                 `[login] Stored cookie validation succeeded: endpoint=${getLeetCodeEndpoint()}, user=${data.username}.`,
             );
-            await this.establishCliSession(cookie, data, globalState.needsCliSessionMigration());
+            if (globalState.needsCliSessionMigration()) {
+                await this.establishCliSession(cookie, data, true);
+            } else {
+                leetCodeChannel.appendLine("[login] Reusing the current local CLI session.");
+            }
             await this.saveVerifiedLogin(cookie, data, false);
             leetCodeChannel.appendLine(`Restored LeetCode login for ${data.username} from secure storage.`);
             return true;
@@ -346,6 +366,7 @@ class LeetCodeManager extends EventEmitter {
     ): Promise<void> {
         leetCodeChannel.appendLine("[login] Starting the official external-Node CLI cookie login flow.");
         await this.setCookieToInteractiveCli(cookie, data.username);
+        await leetCodeExecutor.secureLoginSession();
 
         if (clearProblemCache) {
             leetCodeChannel.appendLine("[login] Clearing the account-specific CLI problem cache.");
@@ -375,6 +396,7 @@ class LeetCodeManager extends EventEmitter {
         if (problemCount === 0) {
             throw new Error("CLI session validation returned no recognizable problems.");
         }
+        leetCodeExecutor.cacheValidatedProblemList(output);
         leetCodeChannel.appendLine(`[login] CLI session validation succeeded with ${problemCount} problems.`);
     }
 

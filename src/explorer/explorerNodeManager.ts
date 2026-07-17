@@ -16,9 +16,10 @@ class ExplorerNodeManager implements Disposable {
     private tagSet: Set<string> = new Set<string>();
 
     public async refreshCache(): Promise<void> {
+        const problems = await list.listProblems();
         this.dispose();
         const shouldHideSolved: boolean = shouldHideSolvedProblem();
-        for (const problem of await list.listProblems()) {
+        for (const problem of problems) {
             if (shouldHideSolved && problem.state === ProblemState.AC) {
                 continue;
             }

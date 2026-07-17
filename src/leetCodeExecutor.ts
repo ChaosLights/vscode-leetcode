@@ -8,7 +8,7 @@ import * as path from "path";
 import * as requireFromString from "require-from-string";
 import { ExtensionContext } from "vscode";
 import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
-import { Endpoint, IProblem, leetcodeHasInited, supportedPlugins } from "./shared";
+import { Endpoint, IProblem, supportedPlugins } from "./shared";
 import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
 import * as wsl from "./utils/wslUtils";
@@ -20,10 +20,18 @@ interface INodeRuntime {
 }
 
 class LeetCodeExecutor implements Disposable {
+    private cliHomeDirectory: string | undefined;
     private leetCodeRootPath: string;
+    private pendingValidatedProblemList: string | undefined;
 
     constructor() {
         this.leetCodeRootPath = path.join(__dirname, "..", "..", "node_modules", "vsc-leetcode-cli");
+    }
+
+    public async initialize(context: ExtensionContext): Promise<void> {
+        this.cliHomeDirectory = path.join(context.globalStorageUri.fsPath, "cli-home");
+        await fse.ensureDir(this.cliHomeDirectory);
+        await this.tryChmod(this.cliHomeDirectory, 0o700);
     }
 
     public async getLeetCodeBinaryPath(): Promise<string> {
@@ -42,8 +50,7 @@ class LeetCodeExecutor implements Disposable {
         )).trim();
         return [
             "mode=external-node",
-            `command=${runtime.command}`,
-            `argsPrefix=${JSON.stringify(runtime.argsPrefix)}`,
+            `command=${path.basename(runtime.command) || runtime.command}`,
             `node=${nodeVersion}`,
             `platform=${process.platform}`,
             `arch=${process.arch}`,
@@ -51,15 +58,15 @@ class LeetCodeExecutor implements Disposable {
         ].join(", ");
     }
 
-    public async meetRequirements(context: ExtensionContext): Promise<boolean> {
-        const hasInited: boolean | undefined = context.globalState.get(leetcodeHasInited);
-        if (!hasInited) {
-            await this.removeOldCache();
-        }
+    public async meetRequirements(): Promise<boolean> {
         try {
             const nodeVersion: string = (await this.executeCommandEx(["-p", "process.version"])).trim();
             if (!/^v\d+\.\d+\.\d+/.test(nodeVersion)) {
                 throw new Error(`The selected executable did not start in Node.js mode: ${nodeVersion}`);
+            }
+            const nodeMajorVersion: number = Number(/^v(\d+)/.exec(nodeVersion)![1]);
+            if (nodeMajorVersion < 20) {
+                throw new Error(`Node.js 20 or newer is required; found ${nodeVersion}.`);
             }
             const cliHelp: string = await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "--help"]);
             if (!cliHelp.includes("Commands:") || !cliHelp.includes("leetcode")) {
@@ -67,8 +74,8 @@ class LeetCodeExecutor implements Disposable {
             }
         } catch (error) {
             const message: string = wsl.useWsl()
-                ? "LeetCode needs Node.js installed inside WSL when leetcode.useWsl is enabled."
-                : "LeetCode needs the official external Node.js runtime available as 'node' or at leetcode.nodePath.";
+                ? "LeetCode needs Node.js 20 or newer inside WSL when leetcode.useWsl is enabled."
+                : "LeetCode needs Node.js 20 or newer available as 'node' or at leetcode.nodePath.";
             const choice: MessageItem | undefined = await window.showErrorMessage(
                 message,
                 DialogOptions.open,
@@ -81,17 +88,15 @@ class LeetCodeExecutor implements Disposable {
         for (const plugin of supportedPlugins) {
             try { // Check plugin
                 await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-e", plugin]);
-            } catch (error) { // Remove old cache that may cause the error download plugin and activate
-                await this.removeOldCache();
+            } catch (error) { // Install a missing plugin without deleting the user's other CLI data.
                 await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "plugin", "-i", plugin]);
             }
         }
-        // Set the global state HasInited true to skip delete old cache after init
-        context.globalState.update(leetcodeHasInited, true);
         return true;
     }
 
     public async deleteCache(): Promise<string> {
+        this.pendingValidatedProblemList = undefined;
         return await this.executeCommandEx([await this.getLeetCodeBinaryPath(), "cache", "-d"]);
     }
 
@@ -104,11 +109,19 @@ class LeetCodeExecutor implements Disposable {
     }
 
     public async clearLoginSession(): Promise<void> {
+        this.pendingValidatedProblemList = undefined;
         const cliDirectory: string = this.getCliSessionDirectory().directory;
         await Promise.all([
             fse.remove(path.join(cliDirectory, "user.json")),
             fse.remove(path.join(cliDirectory, "cache", "problems.json")),
         ]);
+    }
+
+    public async secureLoginSession(): Promise<void> {
+        const cliDirectory: string = this.getCliSessionDirectory().directory;
+        await this.tryChmod(path.dirname(cliDirectory), 0o700);
+        await this.tryChmod(cliDirectory, 0o700);
+        await this.tryChmod(path.join(cliDirectory, "user.json"), 0o600);
     }
 
     public async listProblems(showLocked: boolean, needTranslation: boolean): Promise<string> {
@@ -121,6 +134,16 @@ class LeetCodeExecutor implements Disposable {
             cmd.push("L");
         }
         return await this.executeCommandEx(cmd);
+    }
+
+    public cacheValidatedProblemList(output: string): void {
+        this.pendingValidatedProblemList = output;
+    }
+
+    public consumeValidatedProblemList(): string | undefined {
+        const output: string | undefined = this.pendingValidatedProblemList;
+        this.pendingValidatedProblemList = undefined;
+        return output;
     }
 
     public async showProblem(problemNode: IProblem, language: string, filePath: string, showDescriptionInComment: boolean = false, needTranslation: boolean): Promise<void> {
@@ -267,7 +290,7 @@ class LeetCodeExecutor implements Disposable {
     private getCliSessionDirectory(): { directory: string, endpoint: string } {
         const endpoint: string = workspace.getConfiguration("leetcode").get<string>("endpoint", Endpoint.LeetCode);
         const appDirectory: string = endpoint === Endpoint.LeetCodeCN ? "leetcode.cn" : "leetcode";
-        const homeDirectory: string = process.env.HOME || process.env.USERPROFILE || os.homedir();
+        const homeDirectory: string = this.getCliHomeDirectory();
         return {
             directory: path.join(homeDirectory, ".lc", appDirectory),
             endpoint,
@@ -282,8 +305,9 @@ class LeetCodeExecutor implements Disposable {
             const wslExecutable: string = usePathNode
                 ? "node"
                 : await wsl.toWslPath(configuredExecutable);
+            const wslCliHome: string = await wsl.toWslPath(this.getCliHomeDirectory());
             return {
-                argsPrefix: [wslExecutable],
+                argsPrefix: ["env", `HOME=${wslCliHome}`, `USERPROFILE=${wslCliHome}`, wslExecutable],
                 command: "wsl",
                 env: {},
             };
@@ -292,7 +316,10 @@ class LeetCodeExecutor implements Disposable {
         return {
             argsPrefix: [],
             command: usePathNode ? "node" : configuredExecutable,
-            env: {},
+            env: {
+                HOME: this.getCliHomeDirectory(),
+                USERPROFILE: this.getCliHomeDirectory(),
+            },
         };
     }
 
@@ -323,10 +350,18 @@ class LeetCodeExecutor implements Disposable {
         );
     }
 
-    private async removeOldCache(): Promise<void> {
-        const oldPath: string = path.join(os.homedir(), ".lc");
-        if (await fse.pathExists(oldPath)) {
-            await fse.remove(oldPath);
+    private getCliHomeDirectory(): string {
+        return this.cliHomeDirectory || process.env.HOME || process.env.USERPROFILE || os.homedir();
+    }
+
+    private async tryChmod(targetPath: string, mode: number): Promise<void> {
+        if (!await fse.pathExists(targetPath)) {
+            return;
+        }
+        try {
+            await fse.chmod(targetPath, mode);
+        } catch (error) {
+            // The profile directory ACL remains the security boundary on filesystems without POSIX modes.
         }
     }
 

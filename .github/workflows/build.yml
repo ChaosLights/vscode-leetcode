@@ -30,6 +30,12 @@ jobs:
       - name: Compile
         run: npm run compile
 
+      - name: Test
+        run: npm test
+
+      - name: VS Code integration test
+        run: xvfb-run -a npm run test:vscode
+
       - name: VSCE Package
         run: npx --yes @vscode/vsce@3.9.1 package
 
@@ -54,6 +60,12 @@ jobs:
 
       - name: Compile
         run: npm run compile
+
+      - name: Test
+        run: npm test
+
+      - name: VS Code integration test
+        run: npm run test:vscode
 
       - name: VSCE Package
         run: npx --yes @vscode/vsce@3.9.1 package

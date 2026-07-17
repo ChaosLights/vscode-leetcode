@@ -100,15 +100,19 @@ class MarkdownEngine implements vscode.Disposable {
     }
 
     private addCodeBlockHighlight(md: MarkdownIt): void {
-        const codeBlock: MarkdownIt.TokenRender = md.renderer.rules["code_block"];
+        const codeBlock: MarkdownIt.Renderer.RenderRule | undefined = md.renderer.rules["code_block"];
         // tslint:disable-next-line:typedef
         md.renderer.rules["code_block"] = (tokens, idx, options, env, self) => {
             // if any token uses lang-specified code fence, then do not highlight code block
             if (tokens.some((token: any) => token.type === "fence")) {
-                return codeBlock(tokens, idx, options, env, self);
+                return codeBlock
+                    ? codeBlock(tokens, idx, options, env, self)
+                    : self.renderToken(tokens, idx, options);
             }
             // otherwise, highlight with default lang in env object.
-            const highlighted: string = options.highlight(tokens[idx].content, env.lang);
+            const highlighted: string = options.highlight
+                ? options.highlight(tokens[idx].content, env.lang, "")
+                : "";
             return [
                 `<pre><code ${self.renderAttrs(tokens[idx])} >`,
                 highlighted || md.utils.escapeHtml(tokens[idx].content),
@@ -118,14 +122,17 @@ class MarkdownEngine implements vscode.Disposable {
     }
 
     private addImageUrlCompletion(md: MarkdownIt): void {
-        const image: MarkdownIt.TokenRender = md.renderer.rules["image"];
+        const image: MarkdownIt.Renderer.RenderRule | undefined = md.renderer.rules["image"];
         // tslint:disable-next-line:typedef
         md.renderer.rules["image"] = (tokens, idx, options, env, self) => {
-            const imageSrc: string[] | undefined = tokens[idx].attrs.find((value: string[]) => value[0] === "src");
+            const imageSrc: [string, string] | undefined =
+                tokens[idx].attrs?.find((value: [string, string]) => value[0] === "src");
             if (env.host && imageSrc && imageSrc[1].startsWith("/")) {
                 imageSrc[1] = `${env.host}${imageSrc[1]}`;
             }
-            return image(tokens, idx, options, env, self);
+            return image
+                ? image(tokens, idx, options, env, self)
+                : self.renderToken(tokens, idx, options);
         };
     }
 

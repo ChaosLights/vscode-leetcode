@@ -12,6 +12,8 @@ import { globalState } from "../globalState";
 
 export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCodeNode> {
     private context: vscode.ExtensionContext;
+    private refreshPromise: Promise<void> | undefined;
+    private refreshRequested: boolean = false;
 
     private onDidChangeTreeDataEvent: vscode.EventEmitter<LeetCodeNode | undefined | null> = new vscode.EventEmitter<
         LeetCodeNode | undefined | null
@@ -24,8 +26,11 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
     }
 
     public async refresh(): Promise<void> {
-        await explorerNodeManager.refreshCache();
-        this.onDidChangeTreeDataEvent.fire(null);
+        this.refreshRequested = true;
+        if (!this.refreshPromise) {
+            this.refreshPromise = this.runRefreshLoop();
+        }
+        await this.refreshPromise;
     }
 
     public getTreeItem(element: LeetCodeNode): vscode.TreeItem | Thenable<vscode.TreeItem> {
@@ -148,6 +153,18 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
         }
 
         return [`AC: ${acceptedNum}`, `Failed: ${failedNum}`, `Total: ${childernNodes.length}`].join(os.EOL);
+    }
+
+    private async runRefreshLoop(): Promise<void> {
+        try {
+            while (this.refreshRequested) {
+                this.refreshRequested = false;
+                await explorerNodeManager.refreshCache();
+                this.onDidChangeTreeDataEvent.fire(null);
+            }
+        } finally {
+            this.refreshPromise = undefined;
+        }
     }
 }
 

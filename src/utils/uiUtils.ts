@@ -4,6 +4,7 @@
 import * as vscode from "vscode";
 import { getLeetCodeEndpoint } from "../commands/plugin";
 import { leetCodeChannel } from "../leetCodeChannel";
+import { Endpoint } from "../shared";
 import { getWorkspaceConfiguration } from "./settingUtils";
 
 export namespace DialogOptions {
@@ -47,7 +48,7 @@ export async function promptForSignIn(): Promise<void> {
             await vscode.commands.executeCommand("leetcode.signin");
             break;
         case DialogOptions.singUp:
-            if (getLeetCodeEndpoint()) {
+            if (getLeetCodeEndpoint() === Endpoint.LeetCodeCN) {
                 openUrl("https://leetcode.cn");
             } else {
                 openUrl("https://leetcode.com");
@@ -80,8 +81,13 @@ export async function openKeybindingsEditor(query?: string): Promise<void> {
     await vscode.commands.executeCommand("workbench.action.openGlobalKeybindings", query);
 }
 
-export async function showFileSelectDialog(fsPath?: string): Promise<vscode.Uri[] | undefined> {
-    const defaultUri: vscode.Uri | undefined = getBelongingWorkspaceFolderUri(fsPath);
+export async function showFileSelectDialog(resourceUri?: vscode.Uri): Promise<vscode.Uri[] | undefined> {
+    const workspaceFolder: vscode.WorkspaceFolder | undefined = resourceUri
+        ? vscode.workspace.getWorkspaceFolder(resourceUri)
+        : undefined;
+    const defaultUri: vscode.Uri | undefined = workspaceFolder
+        ? workspaceFolder.uri
+        : resourceUri && vscode.Uri.joinPath(resourceUri, "..");
     const options: vscode.OpenDialogOptions = {
         defaultUri,
         canSelectFiles: true,

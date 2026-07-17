@@ -36,7 +36,11 @@ import { leetCodeSolutionProvider } from "../webview/leetCodeSolutionProvider";
 import * as list from "./list";
 import { getLeetCodeEndpoint } from "./plugin";
 import { globalState } from "../globalState";
-import { liveShareFileService } from "../liveshare/LiveShareFileService";
+import { RemoteTextFileWriteResult } from "../utils/remoteFileWriteCore";
+import { workspaceTextFileExists, writeWorkspaceTextFile } from "../utils/remoteFileWriter";
+
+const activeShowProblemTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+const maxRemoteTemplateBytes: number = 2 * 1024 * 1024;
 
 export async function previewProblem(input?: IProblem | vscode.Uri, isSideMode: boolean = false): Promise<void> {
     let node: IProblem;
@@ -172,6 +176,25 @@ async function fetchProblemLanguage(): Promise<string | undefined> {
 }
 
 async function showProblemInternal(node: IProblem): Promise<void> {
+    const operationKey: string = `${getLeetCodeEndpoint()}:${node.id}`;
+    const activeTask: Promise<void> | undefined = activeShowProblemTasks.get(operationKey);
+    if (activeTask) {
+        leetCodeChannel.appendLine(`[Show Problem] Reusing the active request for problem ${node.id}.`);
+        return await activeTask;
+    }
+
+    const task: Promise<void> = showProblemOnce(node);
+    activeShowProblemTasks.set(operationKey, task);
+    try {
+        await task;
+    } finally {
+        if (activeShowProblemTasks.get(operationKey) === task) {
+            activeShowProblemTasks.delete(operationKey);
+        }
+    }
+}
+
+async function showProblemOnce(node: IProblem): Promise<void> {
     try {
         const language: string | undefined = await fetchProblemLanguage();
         if (!language) {
@@ -246,7 +269,9 @@ async function showProblemInternal(node: IProblem): Promise<void> {
 
         await Promise.all(promises);
     } catch (error) {
-        await promptForOpenOutputChannel(`${error} Please open the output channel for details.`, DialogType.error);
+        const errorMessage: string = getErrorMessage(error);
+        leetCodeChannel.appendLine(`[Show Problem] ${getErrorDetails(error)}`);
+        await promptForOpenOutputChannel(`Failed to open the problem: ${errorMessage}`, DialogType.error);
     }
 }
 
@@ -265,32 +290,33 @@ async function createRemoteProblemFile(
     const resolvedPath: string = await resolveRelativePath(configuredPath, node, language);
     const pathSegments: string[] = getSafeRelativePathSegments(resolvedPath);
     const finalUri: vscode.Uri = vscode.Uri.joinPath(workspaceUri, ...pathSegments);
-
-    if (workspaceUri.scheme === "vsls") {
-        const workspaceFolder: vscode.WorkspaceFolder | undefined = vscode.workspace.getWorkspaceFolder(finalUri);
-        if (!workspaceFolder) {
-            throw new Error(`Unable to resolve the shared workspace for: ${finalUri.toString(true)}`);
-        }
-        const codeTemplate: string = await leetCodeExecutor.getProblemTemplate(
-            node,
-            language,
-            descriptionConfig.showInComment,
-            needTranslation,
-        );
-        await liveShareFileService.createProblemFile(workspaceFolder, resolvedPath, codeTemplate);
-    } else {
-        const parentSegments: string[] = pathSegments.slice(0, -1);
-        if (parentSegments.length) {
-            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(workspaceUri, ...parentSegments));
-        }
-        const codeTemplate: string = await leetCodeExecutor.getProblemTemplate(
-            node,
-            language,
-            descriptionConfig.showInComment,
-            needTranslation,
-        );
-        await vscode.workspace.fs.writeFile(finalUri, Buffer.from(codeTemplate, "utf8"));
+    if (await workspaceTextFileExists(finalUri)) {
+        leetCodeChannel.appendLine(`[Workspace] Preserved existing ${finalUri.toString(true)} via ${finalUri.scheme}.`);
+        return finalUri;
     }
+
+    const codeTemplate: string = await leetCodeExecutor.getProblemTemplate(
+        node,
+        language,
+        descriptionConfig.showInComment,
+        needTranslation,
+    );
+    const templateBytes: number = Buffer.byteLength(codeTemplate, "utf8");
+    if (templateBytes > maxRemoteTemplateBytes) {
+        throw new Error(
+            `The generated problem template is unexpectedly large (${templateBytes} bytes); refusing to write it.`,
+        );
+    }
+    const parentSegments: string[] = pathSegments.slice(0, -1);
+    const parentUri: vscode.Uri | undefined = parentSegments.length
+        ? vscode.Uri.joinPath(workspaceUri, ...parentSegments)
+        : undefined;
+    const writeResult: RemoteTextFileWriteResult =
+        await writeWorkspaceTextFile(finalUri, parentUri, codeTemplate, workspaceUri);
+    leetCodeChannel.appendLine(
+        `[Workspace] ${writeResult === "created" ? "Created" : "Preserved existing"} ` +
+        `${finalUri.toString(true)} via ${finalUri.scheme}.`,
+    );
 
     return finalUri;
 }
@@ -391,4 +417,12 @@ async function resolveCompanyForProblem(problem: IProblem): Promise<string | und
         placeHolder: "Multiple tags available, please select one",
         ignoreFocusOut: true,
     });
+}
+
+function getErrorMessage(error: any): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorDetails(error: any): string {
+    return error instanceof Error && error.stack ? error.stack : getErrorMessage(error);
 }
