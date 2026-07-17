@@ -27,6 +27,7 @@ import { markdownEngine } from "./webview/markdownEngine";
 import { globalState } from "./globalState";
 import { editorActionController } from "./editor/EditorActionController";
 import { LiveShareCodeLensController } from "./codelens/LiveShareCodeLensController";
+import { workspaceFileDeletionTracker } from "./utils/workspaceFileDeletionTracker";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
@@ -68,6 +69,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             markdownEngine,
             editorActionController,
             codeLensController,
+            workspaceFileDeletionTracker.start(),
             explorerNodeManager,
             leetCodeTreeDataProvider.onDidChangeTreeData(() => codeLensController.refresh()),
             vscode.window.registerFileDecorationProvider(leetCodeTreeItemDecorationProvider),

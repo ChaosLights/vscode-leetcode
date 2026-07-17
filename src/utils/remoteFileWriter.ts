@@ -2,15 +2,25 @@
 // Licensed under the MIT license.
 
 import * as vscode from "vscode";
+import * as crypto from "crypto";
+import { leetCodeChannel } from "../leetCodeChannel";
 import {
     IRemoteTextFileOperations,
+    IRemoteTextFileRecreateOperations,
     persistRemoteTextFile,
+    recreateRemoteTextFile,
     RemoteTextFileWriteError,
     RemoteTextFileWriteResult,
 } from "./remoteFileWriteCore";
+import {
+    WorkspaceFileDeletionRevision,
+    workspaceFileDeletionTracker,
+} from "./workspaceFileDeletionTracker";
 
 const activeWorkspaceWrites: Map<string, Promise<RemoteTextFileWriteResult>> =
     new Map<string, Promise<RemoteTextFileWriteResult>>();
+const liveShareCacheSynchronizationAttempts: number = 40;
+const otherRemoteSynchronizationAttempts: number = 5;
 
 class WorkspaceTextFileOperations implements IRemoteTextFileOperations {
     public readonly writable: boolean | undefined;
@@ -81,6 +91,40 @@ export async function writeWorkspaceTextFile(
     }
 }
 
+export async function createWorkspaceTextFileAtomically(
+    fileUri: vscode.Uri,
+    parentUri: vscode.Uri,
+    content: string,
+    workspaceRootUri: vscode.Uri,
+    deletionRevision?: WorkspaceFileDeletionRevision,
+    cancellationToken?: vscode.CancellationToken,
+): Promise<RemoteTextFileWriteResult> {
+    const operationKey: string = fileUri.toString();
+    const activeWrite: Promise<RemoteTextFileWriteResult> | undefined = activeWorkspaceWrites.get(operationKey);
+    if (activeWrite) {
+        await activeWrite;
+        return "existing";
+    }
+
+    const writeTask: Promise<RemoteTextFileWriteResult> =
+        createWorkspaceTextFileAtomicallyOnce(
+            fileUri,
+            parentUri,
+            content,
+            workspaceRootUri,
+            deletionRevision,
+            cancellationToken,
+        );
+    activeWorkspaceWrites.set(operationKey, writeTask);
+    try {
+        return await writeTask;
+    } finally {
+        if (activeWorkspaceWrites.get(operationKey) === writeTask) {
+            activeWorkspaceWrites.delete(operationKey);
+        }
+    }
+}
+
 async function writeWorkspaceTextFileOnce(
     fileUri: vscode.Uri,
     parentUri: vscode.Uri | undefined,
@@ -108,6 +152,104 @@ export async function workspaceTextFileExists(fileUri: vscode.Uri): Promise<bool
             return false;
         }
         throw error;
+    }
+}
+
+async function createWorkspaceTextFileAtomicallyOnce(
+    fileUri: vscode.Uri,
+    parentUri: vscode.Uri,
+    content: string,
+    workspaceRootUri: vscode.Uri,
+    deletionRevision?: WorkspaceFileDeletionRevision,
+    cancellationToken?: vscode.CancellationToken,
+): Promise<RemoteTextFileWriteResult> {
+    await assertNoSymbolicLinkInPath(workspaceRootUri, parentUri);
+    const stagingUri: vscode.Uri = vscode.Uri.joinPath(
+        parentUri,
+        `.vscode-leetcode-recreate-${crypto.randomBytes(12).toString("hex")}.tmp`,
+    );
+    let stagingOwned: boolean = false;
+    const synchronizationAttempts: number = fileUri.scheme === "vsls"
+        ? liveShareCacheSynchronizationAttempts
+        : otherRemoteSynchronizationAttempts;
+    const operations: IRemoteTextFileRecreateOperations = {
+        synchronizationAttempts,
+        verificationAttempts: synchronizationAttempts,
+        waitForTargetDeletion: deletionRevision !== undefined,
+        createStagingFile: async (stagingContent: string): Promise<void> => {
+            const result: RemoteTextFileWriteResult =
+                await writeWorkspaceTextFile(stagingUri, parentUri, stagingContent, workspaceRootUri);
+            if (result !== "created") {
+                throw new Error("The unique staging file unexpectedly already exists.");
+            }
+            stagingOwned = true;
+        },
+        targetExists: async (): Promise<boolean> => workspaceTextFileExists(fileUri),
+        stagingExists: async (): Promise<boolean> => workspaceTextFileExists(stagingUri),
+        deletionStillExpected: (): boolean =>
+            deletionRevision !== undefined &&
+            workspaceFileDeletionTracker.isDeletionRevisionCurrent(fileUri, deletionRevision),
+        deletionWasSuperseded: (): boolean => {
+            const currentRevision: WorkspaceFileDeletionRevision | undefined =
+                workspaceFileDeletionTracker.getDeletionRevision(fileUri);
+            return currentRevision !== undefined && currentRevision !== deletionRevision;
+        },
+        renameStagingToTarget: async (): Promise<void> => {
+            workspaceFileDeletionTracker.expectCreation(fileUri, deletionRevision);
+            await vscode.workspace.fs.rename(stagingUri, fileUri, { overwrite: false });
+            stagingOwned = false;
+        },
+        readTargetText: async (): Promise<string> =>
+            Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString("utf8"),
+        cleanupStagingFile: async (): Promise<void> => {
+            if (!stagingOwned) {
+                return;
+            }
+            try {
+                await vscode.workspace.fs.delete(stagingUri, { recursive: false, useTrash: false });
+                stagingOwned = false;
+            } catch (error) {
+                if (!isFileNotFoundError(error)) {
+                    leetCodeChannel.appendLine(
+                        `[Workspace] Failed to clean a unique recreation staging file: ${getErrorMessage(error)}`,
+                    );
+                }
+            }
+        },
+        isFileExistsError,
+        isFileNotFoundError,
+        isNoPermissionsError,
+        throwIfCancellationRequested: (): void => {
+            if (cancellationToken?.isCancellationRequested) {
+                throw new vscode.CancellationError();
+            }
+        },
+        waitBeforeSynchronizationRetry: async (attempt: number): Promise<void> => {
+            await new Promise<void>((resolve: () => void) =>
+                setTimeout(resolve, Math.min(1000, 50 * Math.pow(2, attempt - 1))));
+        },
+    };
+
+    try {
+        const result: RemoteTextFileWriteResult = await recreateRemoteTextFile(operations, content);
+        const currentRevision: WorkspaceFileDeletionRevision | undefined =
+            workspaceFileDeletionTracker.getDeletionRevision(fileUri);
+        if (currentRevision !== undefined && currentRevision !== deletionRevision) {
+            throw new RemoteTextFileWriteError(
+                "DeletionSuperseded",
+                "The shared problem file was deleted again before Code Now finished.",
+            );
+        }
+        if (
+            deletionRevision !== undefined &&
+            (result === "created" || result === "existing") &&
+            currentRevision === deletionRevision
+        ) {
+            workspaceFileDeletionTracker.recordCreation(fileUri, deletionRevision);
+        }
+        return result;
+    } catch (error) {
+        throw createWorkspaceWriteError(fileUri, error);
     }
 }
 
@@ -159,12 +301,33 @@ function isFileNotFoundError(error: any): boolean {
     return code === "FileNotFound" || name.indexOf("FileNotFound") >= 0;
 }
 
+function isFileExistsError(error: any): boolean {
+    const code: string = error && typeof error.code === "string" ? error.code : "";
+    const name: string = error && typeof error.name === "string" ? error.name : "";
+    return code === "FileExists" || name.indexOf("FileExists") >= 0;
+}
+
+function isNoPermissionsError(error: any): boolean {
+    const code: string = error && typeof error.code === "string" ? error.code : "";
+    const name: string = error && typeof error.name === "string" ? error.name : "";
+    const message: string = getErrorMessage(error);
+    return (
+        code === "NoPermissions" ||
+        name.indexOf("NoPermissions") >= 0 ||
+        /NoPermissions|Access denied|permission denied/i.test(message)
+    );
+}
+
 function createWorkspaceWriteError(fileUri: vscode.Uri, error: any): Error {
+    if (error instanceof vscode.CancellationError) {
+        return error;
+    }
     const message: string = getErrorMessage(error);
     if (fileUri.scheme === "vsls") {
         if (
             (error instanceof RemoteTextFileWriteError && error.code === "ReadOnly") ||
-            /NoPermissions|read[\s-]?only|not writable/i.test(message)
+            isNoPermissionsError(error) ||
+            /read[\s-]?only|not writable/i.test(message)
         ) {
             return new Error(
                 "This Live Share session is read-only for you. Ask the host for read/write access, then run Code Now again.",
@@ -173,6 +336,16 @@ function createWorkspaceWriteError(fileUri: vscode.Uri, error: any): Error {
         if (error instanceof RemoteTextFileWriteError && error.code === "VerificationFailed") {
             return new Error(
                 `${message} Reconnect to the Live Share session and try Code Now again.`,
+            );
+        }
+        if (error instanceof RemoteTextFileWriteError && error.code === "DeletionSyncTimeout") {
+            return new Error(
+                `${message} Wait for the shared Explorer to finish updating, then run Code Now again.`,
+            );
+        }
+        if (error instanceof RemoteTextFileWriteError && error.code === "DeletionSuperseded") {
+            return new Error(
+                `${message} The newer deletion was preserved; run Code Now again when you are ready to recreate it.`,
             );
         }
         return new Error(

@@ -37,7 +37,14 @@ import * as list from "./list";
 import { getLeetCodeEndpoint } from "./plugin";
 import { globalState } from "../globalState";
 import { RemoteTextFileWriteResult } from "../utils/remoteFileWriteCore";
-import { workspaceTextFileExists, writeWorkspaceTextFile } from "../utils/remoteFileWriter";
+import {
+    createWorkspaceTextFileAtomically,
+    workspaceTextFileExists,
+} from "../utils/remoteFileWriter";
+import {
+    WorkspaceFileDeletionRevision,
+    workspaceFileDeletionTracker,
+} from "../utils/workspaceFileDeletionTracker";
 
 const activeShowProblemTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
 const maxRemoteTemplateBytes: number = 2 * 1024 * 1024;
@@ -251,27 +258,33 @@ async function showProblemOnce(node: IProblem): Promise<void> {
             finalUri = vscode.Uri.file(finalPath);
         }
 
-        const promises: any[] = [
-            vscode.window.showTextDocument(finalUri, {
-                preview: false,
-                viewColumn: vscode.ViewColumn.One,
-            }),
+        await vscode.window.showTextDocument(finalUri, {
+            preview: false,
+            viewColumn: vscode.ViewColumn.One,
+        });
+        runDetached(
             promptHintMessage(
                 "hint.commentDescription",
                 'You can config how to show the problem description through "leetcode.showDescription".',
                 "Open settings",
                 (): Promise<any> => openSettingsEditor("leetcode.showDescription")
             ),
-        ];
+            "comment-description hint",
+        );
         if (descriptionConfig.showInWebview) {
-            promises.push(showDescriptionView(node));
+            runDetached(showDescriptionView(node), "problem-description webview");
         }
-
-        await Promise.all(promises);
     } catch (error) {
+        if (error instanceof vscode.CancellationError) {
+            leetCodeChannel.appendLine("[Show Problem] Recreating the deleted shared file was cancelled.");
+            return;
+        }
         const errorMessage: string = getErrorMessage(error);
         leetCodeChannel.appendLine(`[Show Problem] ${getErrorDetails(error)}`);
-        await promptForOpenOutputChannel(`Failed to open the problem: ${errorMessage}`, DialogType.error);
+        runDetached(
+            promptForOpenOutputChannel(`Failed to open the problem: ${errorMessage}`, DialogType.error),
+            "error notification",
+        );
     }
 }
 
@@ -290,7 +303,10 @@ async function createRemoteProblemFile(
     const resolvedPath: string = await resolveRelativePath(configuredPath, node, language);
     const pathSegments: string[] = getSafeRelativePathSegments(resolvedPath);
     const finalUri: vscode.Uri = vscode.Uri.joinPath(workspaceUri, ...pathSegments);
-    if (await workspaceTextFileExists(finalUri)) {
+    const targetExisted: boolean = await workspaceTextFileExists(finalUri);
+    let deletionRevision: WorkspaceFileDeletionRevision | undefined =
+        workspaceFileDeletionTracker.getDeletionRevision(finalUri);
+    if (targetExisted && deletionRevision === undefined) {
         leetCodeChannel.appendLine(`[Workspace] Preserved existing ${finalUri.toString(true)} via ${finalUri.scheme}.`);
         return finalUri;
     }
@@ -307,14 +323,38 @@ async function createRemoteProblemFile(
             `The generated problem template is unexpectedly large (${templateBytes} bytes); refusing to write it.`,
         );
     }
+    deletionRevision = workspaceFileDeletionTracker.getDeletionRevision(finalUri);
     const parentSegments: string[] = pathSegments.slice(0, -1);
-    const parentUri: vscode.Uri | undefined = parentSegments.length
+    const parentUri: vscode.Uri = parentSegments.length
         ? vscode.Uri.joinPath(workspaceUri, ...parentSegments)
-        : undefined;
-    const writeResult: RemoteTextFileWriteResult =
-        await writeWorkspaceTextFile(finalUri, parentUri, codeTemplate, workspaceUri);
+        : workspaceUri;
+    const writeResult: RemoteTextFileWriteResult = await vscode.window.withProgress(
+        {
+            cancellable: deletionRevision !== undefined,
+            location: deletionRevision !== undefined
+                ? vscode.ProgressLocation.Notification
+                : vscode.ProgressLocation.Window,
+            title: deletionRevision !== undefined
+                ? "LeetCode: waiting for Live Share to recreate the deleted file..."
+                : "LeetCode: creating the shared problem file...",
+        },
+        async (
+            _progress: vscode.Progress<{ message?: string; increment?: number }>,
+            cancellationToken: vscode.CancellationToken,
+        ): Promise<RemoteTextFileWriteResult> =>
+            createWorkspaceTextFileAtomically(
+                finalUri,
+                parentUri,
+                codeTemplate,
+                workspaceUri,
+                deletionRevision,
+                cancellationToken,
+            ),
+    );
     leetCodeChannel.appendLine(
-        `[Workspace] ${writeResult === "created" ? "Created" : "Preserved existing"} ` +
+        `[Workspace] ${writeResult === "created"
+            ? deletionRevision !== undefined ? "Recreated deleted" : "Created"
+            : "Preserved concurrently created"} ` +
         `${finalUri.toString(true)} via ${finalUri.scheme}.`,
     );
 
@@ -425,4 +465,10 @@ function getErrorMessage(error: any): string {
 
 function getErrorDetails(error: any): string {
     return error instanceof Error && error.stack ? error.stack : getErrorMessage(error);
+}
+
+function runDetached(operation: Promise<any>, label: string): void {
+    operation.catch((error: any) => {
+        leetCodeChannel.appendLine(`[Show Problem] Failed to show ${label}: ${getErrorDetails(error)}`);
+    });
 }

@@ -8,6 +8,7 @@
 
 - Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
 - Problem files selected from the Explorer stay in the shared workspace. Remote/Codespaces and current Live Share both use VS Code's `workspace.fs`; Live Share routes `vsls:` writes through its own provider and checks the actual guest's access. Existing solution files are opened without being overwritten.
+- If a participant deletes a generated problem file, **Code Now** waits for Live Share's stale file cache to catch up and recreates it through an atomic, non-overwriting rename. Concurrently recreated files and friends' edits are preserved.
 - A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
 - Native one-click CodeLens is restored for local and host documents. The provider deliberately excludes guest `vsls:` documents, so Live Share forwards exactly one host set. Each lens uses a Live Share 1.1.122 guest-local built-in command as a caret signal; the local extension restores the selection and runs the requested action with that window's own account. The rocket and right-click **LeetCode** menu remain as fallbacks.
 - The bundled CLI runs through an external Node.js 20+ child process. It never launches `Code.exe` or an Electron Worker as a script runner.
@@ -17,7 +18,7 @@
 - `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, and CodeLens visibility for support.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.21.0 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.0) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.21.1 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.1) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

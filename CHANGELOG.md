@@ -1,5 +1,14 @@
 # Change Log
 
+## 0.21.1
+
+- Recreate a generated problem file after a Live Share guest deletes it, even while Live Share still reports the deleted file through its stale metadata and read caches.
+- Track deletion revisions from VS Code file operations and the `vsls:` file watcher so a later deletion cannot be cleared or reported as successful by an older Code Now request.
+- Create every remote problem file through a unique staging file and an atomic, non-overwriting rename. Concurrent participants' files and unrelated staging files are always preserved.
+- Wait for both the deleted target and the newly staged file to become visible, tolerate Live Share's ambiguous rename errors, verify the recreated target only after its new metadata is visible, and allow the wait to be cancelled.
+- Release the per-problem Code Now lock after the file is open instead of waiting for information/error notifications or the optional description webview to close.
+- Add Extension Host regressions for real deletion events, stale positive and negative caches, identical old/new templates, staging ownership, repeated deletion revisions, and a permanently pending information message.
+
 ## 0.21.0
 
 - Restore native one-click CodeLens shortcuts for `Submit`, `Test`, `Solution`, `Description`, and optional `Star` inside generated solution files.
