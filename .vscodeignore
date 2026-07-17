@@ -1,8 +1,11 @@
 .vscode/**
 .vscode-test/**
+.release-test/**
+.release-verify/**
 out/test/**
 test/**
 src/**
+scripts/**
 **/*.map
 .gitignore
 package-lock.json

@@ -1,5 +1,14 @@
 # Change Log
 
+## 0.21.0
+
+- Restore native one-click CodeLens shortcuts for `Submit`, `Test`, `Solution`, `Description`, and optional `Star` inside generated solution files.
+- Register the provider only for local/host `file:`, `untitled:`, and `vscode-remote:` documents. A Live Share guest's `vsls:` document receives the host set and does not add a duplicate local set.
+- Route every lens through Live Share 1.1.122's explicitly guest-local `editor.action.showReferences` command. An empty result list produces only a local caret signal; the local bridge restores the prior selection and runs the action with that window's LeetCode account.
+- Preserve the editor-title rocket, right-click menu, and command palette as fallbacks when editor CodeLens is disabled.
+- Cache bounded solution metadata by document version so the provider does not scan unrelated large source files while scrolling.
+- Extend pairing diagnostics with the current CodeLens visibility setting, and cover the host provider, single remoted guest set, local-account URI, repeated click, selection restoration, and invalid-marker cases in the VS Code integration suite.
+
 ## 0.20.0
 
 - Replace the private Live Share extension API and custom host RPC with VS Code's `workspace.fs` virtual-file API. Current Live Share now performs the write through its registered `vsls:` provider, enforces the actual guest's read/write access, and no longer requires both sides to expose a custom service.

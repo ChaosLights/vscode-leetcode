@@ -40,7 +40,7 @@ jobs:
         run: xvfb-run -a npm run test:vscode
 
       - name: VSCE Package
-        run: npx --yes @vscode/vsce@3.9.1 package
+        run: npm run build
 
   windows:
     name: Windows
@@ -74,4 +74,4 @@ jobs:
         run: npm run test:vscode
 
       - name: VSCE Package
-        run: npx --yes @vscode/vsce@3.9.1 package
+        run: npm run build

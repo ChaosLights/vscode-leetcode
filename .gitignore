@@ -61,6 +61,8 @@ typings/
 out
 *.vsix
 .vscode-test
+.release-test
+.release-verify
 
 # Mac
 .DS_Store

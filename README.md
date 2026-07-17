@@ -9,15 +9,15 @@
 - Remote and `vsls:` documents are materialized locally only for the participant who runs Submit/Test.
 - Problem files selected from the Explorer stay in the shared workspace. Remote/Codespaces and current Live Share both use VS Code's `workspace.fs`; Live Share routes `vsls:` writes through its own provider and checks the actual guest's access. Existing solution files are opened without being overwritten.
 - A checked-in `leetcode.workspaceFolderByUser` map can route each participant's local LeetCode username to a different folder inside the shared workspace without per-user VS Code settings.
-- Language-service CodeLens is intentionally not registered. Use the local rocket action in the editor title or right-click **LeetCode**; local UI actions cannot be duplicated or remoted by Live Share.
+- Native one-click CodeLens is restored for local and host documents. The provider deliberately excludes guest `vsls:` documents, so Live Share forwards exactly one host set. Each lens uses a Live Share 1.1.122 guest-local built-in command as a caret signal; the local extension restores the selection and runs the requested action with that window's own account. The rocket and right-click **LeetCode** menu remain as fallbacks.
 - The bundled CLI runs through an external Node.js 20+ child process. It never launches `Code.exe` or an Electron Worker as a script runner.
 - Each participant's recovery Cookie is stored in local VS Code SecretStorage. The CLI's required runtime session is separately isolated under this extension's local VS Code global storage; neither location is shared through Live Share.
 - Saved cookies are verified before a local CLI session is restored. Stale CLI users and account-specific problem caches are cleared automatically.
 - The fork sends no telemetry, usernames, problem paths, or workspace paths.
-- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, and trust state for support.
+- `LeetCode: Diagnose Pairing` reports only versions, host placement, workspace schemes/writability, trust state, and CodeLens visibility for support.
 - The Explorer includes a fixed, verified NeetCode 150 category.
 
-Install the pinned VSIX from the [v0.20.0 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.20.0) in a local VS Code window, not in the Codespace extension host.
+Install the pinned VSIX from the [v0.21.0 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.21.0) in a local VS Code window, not in the Codespace extension host.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">
@@ -37,7 +37,7 @@ Install the pinned VSIX from the [v0.20.0 release](https://github.com/ChaosLight
   </a>
 </p>
 
-- English Document | [中文文档](https://github.com/LeetCode-OpenSource/vscode-leetcode/blob/master/docs/README_zh-CN.md)
+- English Document | [中文文档](docs/README_zh-CN.md)
 
 ## ❗️ Attention ❗️- Workaround to login to LeetCode endpoint
 
@@ -51,7 +51,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 
 ## Requirements
 
-- Desktop [VS Code 1.100.0+](https://code.visualstudio.com/), Live Share 1.1.122+, and an external [Node.js 20+](https://nodejs.org/) executable available as `node` on each participant's local `PATH`.
+- Desktop [VS Code 1.100.0+](https://code.visualstudio.com/), the verified Live Share 1.1.122 release, and an external [Node.js 20+](https://nodejs.org/) executable available as `node` on each participant's local `PATH`.
 
 ## Quick Start
 
@@ -114,7 +114,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
 </p>
 
-- The extension supports 5 editor shortcuts (aka Code Lens):
+- The extension supports 5 native one-click CodeLens shortcuts:
 
   - `Submit`: Submit your answer to LeetCode.
   - `Test`: Test your answer with customized test cases.
@@ -122,7 +122,9 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
   - `Solution`: Show the top voted solution for the current problem.
   - `Description`: Show the problem description page.
 
-  > Note: You can customize the shortcuts using the setting: `leetcode.editor.shortcuts`. By default, only `Submit` and `Test` shortcuts are enabled.
+  > The host/local provider renders them beside `@lc code=end`. A Live Share guest receives that single set and does not create a second one; clicks are converted back into local actions and use the clicking window's account. You can customize them with `leetcode.editor.shortcuts`. The defaults are `Submit`, `Test`, `Solution`, and `Description`.
+
+  > If they are hidden, set `editor.codeLens` to `true`. The editor-title rocket, right-click **LeetCode** menu, and command palette remain available as fallbacks.
 
 ---
 
@@ -156,7 +158,7 @@ Thanks for [@yihong0618](https://github.com/yihong0618) provided a workaround wh
 | `leetcode.workspaceFolderByUser`  | Map each locally signed-in LeetCode username to a workspace-relative problem folder. A missing entry is an error when the map is non-empty.                                                                                                                    | `{}`               |
 | `leetcode.filePath`               | Specify the relative path under the workspace and the file name to save the problem files. More details can be found [here](https://github.com/LeetCode-OpenSource/vscode-leetcode/wiki/Customize-the-Relative-Folder-and-the-File-Name-of-the-Problem-File). |                    |
 | `leetcode.enableStatusBar`        | Specify whether the LeetCode status bar will be shown or not.                                                                                                                                                                                                 | `true`             |
-| `leetcode.editor.shortcuts`       | Choose actions in the local editor action menu. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                                | `["submit", "test", "solution", "description"]` |
+| `leetcode.editor.shortcuts`       | Choose actions in CodeLens and the fallback action menus. Supported values are: `submit`, `test`, `star`, `solution` and `description`.                                                                                                                   | `["submit", "test", "solution", "description"]` |
 | `leetcode.enableSideMode`         | Specify whether `preview`, `solution` and `submission` tab should be grouped into the second editor column when solving a problem.                                                                                                                            | `true`             |
 | `leetcode.nodePath`               | Use `node` for the external Node.js 20+ child-process runtime, or specify a full executable path. WSL mode uses Node.js 20+ inside WSL.                                                                                                                    | `node`             |
 | `leetcode.showCommentDescription` | Specify whether to include the problem description in the comments                                                                                                                                                                                            | `false`            |
@@ -172,7 +174,7 @@ If your problem still cannot be addressed, feel free to reach us in the [Gitter 
 
 ## Release Notes
 
-Refer to [CHANGELOG](https://github.com/LeetCode-OpenSource/vscode-leetcode/blob/master/CHANGELOG.md)
+Refer to [CHANGELOG](CHANGELOG.md)
 
 ## Acknowledgement
 

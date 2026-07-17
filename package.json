@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.20.0",
+    "version": "0.21.0",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -716,7 +716,7 @@
                                 "Show the problem description page."
                             ]
                         },
-                        "description": "Customize the local editor action menu. These actions are not remoted through Live Share."
+                        "description": "Customize the Live Share-safe CodeLens shortcuts and fallback action menu. These actions always run with this window's LeetCode account."
                     },
                     "leetcode.enableSideMode": {
                         "type": "boolean",
@@ -760,7 +760,7 @@
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
         "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js",
         "test:vscode": "npm run compile && node ./test/runVscodeIntegration.js",
-        "build": "npx --yes @vscode/vsce@3.9.1 package"
+        "build": "node ./scripts/package.js"
     },
     "devDependencies": {
         "@types/fs-extra": "^9.0.11",

@@ -7,7 +7,9 @@ import { LeetCodeNode } from "../explorer/LeetCodeNode";
 import { getNodeIdFromContent } from "../utils/problemUtils";
 import { getEditorShortcuts } from "../utils/settingUtils";
 
-interface IEditorAction extends vscode.QuickPickItem {
+export interface IEditorAction extends vscode.QuickPickItem {
+    shortcut: string;
+    codeLensTitle: string;
     command: string;
     args: any[];
 }
@@ -55,45 +57,83 @@ class EditorActionController implements vscode.Disposable {
         void vscode.commands.executeCommand("setContext", "leetcode.activeSolution", false);
     }
 
-    private getActions(document: vscode.TextDocument): IEditorAction[] {
+    public getActions(document: vscode.TextDocument, knownNodeId?: string): IEditorAction[] {
         const shortcuts: string[] = getEditorShortcuts();
+        const nodeId: string = knownNodeId || getNodeIdFromContent(document.getText());
+        if (!nodeId) {
+            return [];
+        }
+        const actions: Map<string, IEditorAction | undefined> = this.createActionMap(document, nodeId);
+
+        return shortcuts
+            .map((shortcut: string) => actions.get(shortcut))
+            .filter((action: IEditorAction | undefined): action is IEditorAction => Boolean(action));
+    }
+
+    public async executeShortcut(shortcut: string, document: vscode.TextDocument): Promise<boolean> {
         const nodeId: string = getNodeIdFromContent(document.getText());
+        if (!nodeId) {
+            return false;
+        }
+        const action: IEditorAction | undefined = this.createActionMap(document, nodeId).get(shortcut);
+        if (!action) {
+            if (shortcut === "star") {
+                vscode.window.showWarningMessage(
+                    "LeetCode problem data is still loading. Refresh the Explorer and try again.",
+                );
+            }
+            return false;
+        }
+        await vscode.commands.executeCommand(action.command, ...action.args);
+        return true;
+    }
+
+    private createActionMap(
+        document: vscode.TextDocument,
+        nodeId: string,
+    ): Map<string, IEditorAction | undefined> {
         const node: LeetCodeNode | undefined = explorerNodeManager.getNodeById(nodeId);
-        const actions: Map<string, IEditorAction | undefined> = new Map<string, IEditorAction | undefined>([
+        return new Map<string, IEditorAction | undefined>([
             ["submit", {
+                shortcut: "submit",
                 label: "$(cloud-upload) Submit",
+                codeLensTitle: "Submit",
                 description: "Submit with your local account",
                 command: "leetcode.submitSolution",
                 args: [document.uri],
             }],
             ["test", {
+                shortcut: "test",
                 label: "$(beaker) Test",
+                codeLensTitle: "Test",
                 description: "Run LeetCode test cases with your local account",
                 command: "leetcode.testSolution",
                 args: [document.uri],
             }],
             ["solution", {
+                shortcut: "solution",
                 label: "$(book) Solution",
+                codeLensTitle: "Solution",
                 description: "Open the top-voted solution locally",
                 command: "leetcode.showSolution",
                 args: [document.uri],
             }],
             ["description", {
+                shortcut: "description",
                 label: "$(preview) Description",
+                codeLensTitle: "Description",
                 description: "Open the problem description locally",
                 command: "leetcode.previewProblem",
                 args: [document.uri],
             }],
             ["star", node ? {
+                shortcut: "star",
                 label: node.isFavorite ? "$(star-delete) Unstar" : "$(star-add) Star",
+                codeLensTitle: "Toggle Star",
                 command: node.isFavorite ? "leetcode.removeFavorite" : "leetcode.addFavorite",
                 args: [node],
             } : undefined],
         ]);
-
-        return shortcuts
-            .map((shortcut: string) => actions.get(shortcut))
-            .filter((action: IEditorAction | undefined): action is IEditorAction => Boolean(action));
     }
 
     private async resolveDocument(uri?: vscode.Uri): Promise<vscode.TextDocument | undefined> {

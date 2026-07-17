@@ -26,6 +26,7 @@ import { leetCodeSubmissionProvider } from "./webview/leetCodeSubmissionProvider
 import { markdownEngine } from "./webview/markdownEngine";
 import { globalState } from "./globalState";
 import { editorActionController } from "./editor/EditorActionController";
+import { LiveShareCodeLensController } from "./codelens/LiveShareCodeLensController";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
@@ -57,6 +58,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
 
         leetCodeTreeDataProvider.initialize(context);
+        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController();
 
         context.subscriptions.push(
             leetCodeStatusBarController,
@@ -65,7 +67,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             leetCodeSolutionProvider,
             markdownEngine,
             editorActionController,
+            codeLensController,
             explorerNodeManager,
+            leetCodeTreeDataProvider.onDidChangeTreeData(() => codeLensController.refresh()),
             vscode.window.registerFileDecorationProvider(leetCodeTreeItemDecorationProvider),
             vscode.window.createTreeView("leetCodeExplorer", { treeDataProvider: leetCodeTreeDataProvider, showCollapseAll: true }),
             vscode.commands.registerCommand("leetcode.deleteCache", () => cache.deleteCache()),
@@ -82,8 +86,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             vscode.commands.registerCommand("leetcode.testSolution", (uri?: vscode.Uri) => test.testSolution(uri)),
             vscode.commands.registerCommand("leetcode.submitSolution", (uri?: vscode.Uri) => submit.submitSolution(uri)),
             vscode.commands.registerCommand("leetcode.switchDefaultLanguage", () => switchDefaultLanguage()),
-            vscode.commands.registerCommand("leetcode.addFavorite", (node: LeetCodeNode) => star.addFavorite(node)),
-            vscode.commands.registerCommand("leetcode.removeFavorite", (node: LeetCodeNode) => star.removeFavorite(node)),
+            vscode.commands.registerCommand("leetcode.addFavorite", async (node: LeetCodeNode) => {
+                await star.addFavorite(node);
+                codeLensController.refresh();
+            }),
+            vscode.commands.registerCommand("leetcode.removeFavorite", async (node: LeetCodeNode) => {
+                await star.removeFavorite(node);
+                codeLensController.refresh();
+            }),
             vscode.commands.registerCommand("leetcode.problems.sort", () => plugin.switchSortingStrategy()),
             vscode.commands.registerCommand("leetcode.showEditorActions", (uri?: vscode.Uri) => editorActionController.show(uri))
         );

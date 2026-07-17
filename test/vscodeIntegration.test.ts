@@ -2,12 +2,70 @@
 // Licensed under the MIT license.
 
 import * as assert from "assert";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
+import { LiveShareCodeLensController } from "../src/codelens/LiveShareCodeLensController";
+import { CODE_LENS_BRIDGE_COMMAND } from "../src/codelens/LiveShareSafeCodeLensProvider";
 import { workspaceTextFileExists, writeWorkspaceTextFile } from "../src/utils/remoteFileWriter";
 
 interface IPendingFile {
     content: Uint8Array;
     remainingInvisibleReads: number;
+}
+
+function assertCodeLensActions(codeLenses: vscode.CodeLens[] | undefined, expectedUri: vscode.Uri): void {
+    assert.ok(codeLenses);
+    assert.strictEqual(codeLenses.length, 4);
+    assert.deepStrictEqual(
+        codeLenses.map((codeLens: vscode.CodeLens) => codeLens.command?.title),
+        ["Submit", "Test", "Solution", "Description"],
+    );
+    for (const codeLens of codeLenses) {
+        assert.strictEqual(codeLens.command?.command, CODE_LENS_BRIDGE_COMMAND);
+        const actionUri: vscode.Uri = codeLens.command?.arguments?.[0];
+        assert.strictEqual(actionUri.toString(), expectedUri.toString());
+        assert.strictEqual(actionUri.scheme, expectedUri.scheme);
+        const bridgePosition: vscode.Position = codeLens.command?.arguments?.[1];
+        assert.ok(bridgePosition instanceof vscode.Position);
+        assert.strictEqual(bridgePosition.line, codeLens.range.start.line);
+        assert.deepStrictEqual(codeLens.command?.arguments?.[2], []);
+    }
+}
+
+async function waitFor(
+    predicate: () => boolean,
+    failureMessage: string,
+    timeoutMs: number = 3000,
+): Promise<void> {
+    const deadline: number = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (predicate()) {
+            return;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(failureMessage);
+}
+
+async function setEditorSelection(
+    editor: vscode.TextEditor,
+    selection: vscode.Selection,
+): Promise<void> {
+    let observed: boolean = false;
+    const registration: vscode.Disposable =
+        vscode.window.onDidChangeTextEditorSelection((event: vscode.TextEditorSelectionChangeEvent) => {
+            if (event.textEditor === editor && event.selections.length === 1 &&
+                event.selections[0].isEqual(selection)) {
+                observed = true;
+            }
+        });
+    try {
+        editor.selection = selection;
+        await waitFor(() => observed, "The requested editor selection was not observed.");
+    } finally {
+        registration.dispose();
+    }
 }
 
 class InMemoryFileSystemProvider implements vscode.FileSystemProvider {
@@ -134,6 +192,197 @@ export async function run(): Promise<void> {
             "first solution\n",
         );
 
+        const solutionUri: vscode.Uri =
+            vscode.Uri.parse("vsls:/~0/code/guest/8.string-to-integer-atoi.cpp");
+        const solutionText: string = [
+            "// @lc app=leetcode id=8 lang=cpp",
+            "",
+            "class Solution {};",
+            "",
+            "// @lc code=end",
+            "",
+        ].join("\n");
+        assert.strictEqual(
+            await writeWorkspaceTextFile(solutionUri, parentUri, solutionText, workspaceRootUri),
+            "created",
+        );
+        const solutionDocument: vscode.TextDocument = await vscode.workspace.openTextDocument(solutionUri);
+        const codeLensController: LiveShareCodeLensController = new LiveShareCodeLensController();
+        const actionInvocations: Array<{ command: string; uri: vscode.Uri }> = [];
+        const actionCommandRegistrations: vscode.Disposable[] = [
+            vscode.commands.registerCommand("leetcode.submitSolution", (uri: vscode.Uri) => {
+                actionInvocations.push({ command: "leetcode.submitSolution", uri });
+            }),
+            vscode.commands.registerCommand("leetcode.testSolution", (uri: vscode.Uri) => {
+                actionInvocations.push({ command: "leetcode.testSolution", uri });
+            }),
+            vscode.commands.registerCommand("leetcode.showSolution", (uri: vscode.Uri) => {
+                actionInvocations.push({ command: "leetcode.showSolution", uri });
+            }),
+            vscode.commands.registerCommand("leetcode.previewProblem", (uri: vscode.Uri) => {
+                actionInvocations.push({ command: "leetcode.previewProblem", uri });
+            }),
+        ];
+        const localSolutionUri: vscode.Uri = vscode.Uri.file(
+            path.join(os.tmpdir(), `vscode-leetcode-codelens-${process.pid}.cpp`),
+        );
+        await vscode.workspace.fs.writeFile(localSolutionUri, Buffer.from(solutionText, "utf8"));
+        let remotedCodeLensRegistration: vscode.Disposable | undefined;
+        try {
+            const guestLocalCodeLenses: vscode.CodeLens[] | undefined =
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    "vscode.executeCodeLensProvider",
+                    solutionUri,
+                    Number.MAX_VALUE,
+                );
+            assert.deepStrictEqual(guestLocalCodeLenses || [], []);
+
+            await vscode.workspace.openTextDocument(localSolutionUri);
+            const localCodeLenses: vscode.CodeLens[] | undefined =
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    "vscode.executeCodeLensProvider",
+                    localSolutionUri,
+                    Number.MAX_VALUE,
+                );
+            assertCodeLensActions(localCodeLenses, localSolutionUri);
+
+            const localEditor: vscode.TextEditor =
+                await vscode.window.showTextDocument(localSolutionUri, { preview: false });
+            const localOriginalSelection: vscode.Selection = new vscode.Selection(2, 0, 2, 0);
+            await setEditorSelection(localEditor, localOriginalSelection);
+            const localSubmitCommand: vscode.Command | undefined = localCodeLenses?.[0].command;
+            assert.ok(localSubmitCommand);
+            await vscode.commands.executeCommand(
+                localSubmitCommand.command,
+                ...(localSubmitCommand.arguments || []),
+            );
+            await waitFor(
+                () => actionInvocations.length === 1,
+                "Host CodeLens action did not execute locally.",
+            );
+            assert.strictEqual(actionInvocations[0].command, "leetcode.submitSolution");
+            assert.strictEqual(actionInvocations[0].uri.toString(), localSolutionUri.toString());
+            assert.ok(localEditor.selection.isEqual(localOriginalSelection));
+            actionInvocations.length = 0;
+
+            remotedCodeLensRegistration = vscode.languages.registerCodeLensProvider(
+                { scheme: "vsls" },
+                {
+                    provideCodeLenses: (document: vscode.TextDocument): vscode.CodeLens[] =>
+                        (localCodeLenses || []).map((codeLens: vscode.CodeLens) =>
+                            new vscode.CodeLens(codeLens.range, {
+                                title: codeLens.command?.title || "",
+                                command: codeLens.command?.command || "",
+                                tooltip: codeLens.command?.tooltip,
+                                arguments: [
+                                    document.uri,
+                                    new vscode.Position(
+                                        codeLens.command?.arguments?.[1].line,
+                                        codeLens.command?.arguments?.[1].character,
+                                    ),
+                                    [],
+                                ],
+                            })),
+                },
+            );
+            const guestCodeLenses: vscode.CodeLens[] | undefined =
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                    "vscode.executeCodeLensProvider",
+                    solutionUri,
+                    Number.MAX_VALUE,
+                );
+            assertCodeLensActions(guestCodeLenses, solutionUri);
+
+            const guestEditor: vscode.TextEditor =
+                await vscode.window.showTextDocument(solutionDocument, { preview: false });
+            const originalSelection: vscode.Selection = new vscode.Selection(2, 0, 2, 0);
+            await setEditorSelection(guestEditor, originalSelection);
+
+            const expectedCommands: string[] = [
+                "leetcode.submitSolution",
+                "leetcode.testSolution",
+                "leetcode.showSolution",
+                "leetcode.previewProblem",
+            ];
+            for (let index: number = 0; index < (guestCodeLenses || []).length; index++) {
+                const command: vscode.Command | undefined = guestCodeLenses?.[index].command;
+                assert.ok(command);
+                await vscode.commands.executeCommand(command.command, ...(command.arguments || []));
+                await waitFor(
+                    () => actionInvocations.length === index + 1,
+                    `Guest CodeLens action ${index} did not execute locally.`,
+                );
+                assert.strictEqual(actionInvocations[index].command, expectedCommands[index]);
+                assert.strictEqual(actionInvocations[index].uri.toString(), solutionUri.toString());
+                assert.ok(guestEditor.selection.isEqual(originalSelection));
+            }
+
+            const repeatCommand: vscode.Command | undefined = guestCodeLenses?.[1].command;
+            assert.ok(repeatCommand);
+            await vscode.commands.executeCommand(
+                repeatCommand.command,
+                ...(repeatCommand.arguments || []),
+            );
+            await waitFor(
+                () => actionInvocations.length === expectedCommands.length + 1,
+                "Repeated guest CodeLens action did not execute.",
+            );
+            assert.strictEqual(
+                actionInvocations[actionInvocations.length - 1].command,
+                "leetcode.testSolution",
+            );
+            assert.strictEqual(
+                actionInvocations[actionInvocations.length - 1].uri.toString(),
+                solutionUri.toString(),
+            );
+
+            const fakeMarkerUri: vscode.Uri = vscode.Uri.file(
+                path.join(os.tmpdir(), `vscode-leetcode-fake-codelens-${process.pid}.cpp`),
+            );
+            await vscode.workspace.fs.writeFile(
+                fakeMarkerUri,
+                Buffer.from([
+                    "// @lc app=leetcode id=8 lang=cpp",
+                    "const char* marker = \"@lc code=end\";",
+                ].join("\n"), "utf8"),
+            );
+            try {
+                const fakeMarkerDocument: vscode.TextDocument =
+                    await vscode.workspace.openTextDocument(fakeMarkerUri);
+                const fakeMarkerCodeLenses: vscode.CodeLens[] | undefined =
+                    await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                        "vscode.executeCodeLensProvider",
+                        fakeMarkerUri,
+                        Number.MAX_VALUE,
+                    );
+                assert.deepStrictEqual(fakeMarkerCodeLenses || [], []);
+
+                const makeValidEdit: vscode.WorkspaceEdit = new vscode.WorkspaceEdit();
+                makeValidEdit.insert(
+                    fakeMarkerUri,
+                    fakeMarkerDocument.lineAt(fakeMarkerDocument.lineCount - 1).range.end,
+                    "\n// @lc code=end\n",
+                );
+                assert.strictEqual(await vscode.workspace.applyEdit(makeValidEdit), true);
+                const newlyValidCodeLenses: vscode.CodeLens[] | undefined =
+                    await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                        "vscode.executeCodeLensProvider",
+                        fakeMarkerUri,
+                        Number.MAX_VALUE,
+                    );
+                assertCodeLensActions(newlyValidCodeLenses, fakeMarkerUri);
+            } finally {
+                await vscode.workspace.fs.delete(fakeMarkerUri);
+            }
+        } finally {
+            remotedCodeLensRegistration?.dispose();
+            for (const actionCommandRegistration of actionCommandRegistrations) {
+                actionCommandRegistration.dispose();
+            }
+            codeLensController.dispose();
+            await vscode.workspace.fs.delete(localSolutionUri);
+        }
+
         assert.strictEqual(
             await writeWorkspaceTextFile(
                 fileUri,
@@ -224,4 +473,5 @@ export async function run(): Promise<void> {
     } finally {
         readOnlyRegistration.dispose();
     }
+
 }

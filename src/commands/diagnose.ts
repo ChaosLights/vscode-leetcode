@@ -17,6 +17,8 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
             return `${folder.uri.scheme}:${writable === undefined ? "unknown" : writable ? "writable" : "read-only"}`;
         },
     );
+    const editorConfiguration: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("editor");
+    const codeLensEnabled: boolean = editorConfiguration.get<boolean>("codeLens", true);
 
     leetCodeChannel.appendLine("[diagnostics] ---- LeetCode pairing diagnostics ----");
     leetCodeChannel.appendLine(
@@ -32,6 +34,9 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
     leetCodeChannel.appendLine(
         `[diagnostics] liveShare=${liveShareExtension?.packageJSON.version || "not-installed"}, ` +
         `active=${liveShareExtension?.isActive || false}.`,
+    );
+    leetCodeChannel.appendLine(
+        `[diagnostics] codeLens=${codeLensEnabled}.`,
     );
     try {
         leetCodeChannel.appendLine(`[diagnostics] ${await leetCodeExecutor.getRuntimeDescription()}.`);
