@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.3
+
+- Let the Windows pairing launcher bootstrap GitHub CLI automatically. It prefers `winget` and falls back to the official portable GitHub CLI release with SHA-256 verification, so a first-time participant does not need to install `gh` manually.
+- Open GitHub's browser authorization flow automatically when no account is signed in, and request missing `repo` and `codespace` scopes only when needed.
+- Add an environment-only preflight mode for validating GitHub CLI, authentication, OAuth scopes, and private Issue access without opening VS Code or starting an election.
+
 ## 0.22.2
 
 - Recover an elected host after Live Share has started but before its invitation was published. Retrieving an existing host link now omits the immutable access-level option instead of repeatedly failing with `Cannot change default access for an already shared session`.
