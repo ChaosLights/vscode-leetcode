@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.21.5
+
+- Bind editor actions to the first generated code block instead of the last `@lc code=end`, so pasting a complete problem below the original cannot move the action strip to the duplicate.
+- Refresh remote and Live Share inlay actions immediately on document changes and materialize an empty footer action line when edits remove it; actions no longer disappear temporarily or fall back to `code=endSubmit` at the source-line end.
+- Add VS Code virtual-filesystem regressions that paste a duplicate generated block, remove it together with the final newline, and verify the original footer keeps a compact action strip on the following line throughout recovery.
+
 ## 0.21.4
 
 - Move the Codespaces/Live Share local action strip to the empty line immediately below `@lc code=end`, matching CodeLens' compact separate-line presentation instead of appending controls to source text.

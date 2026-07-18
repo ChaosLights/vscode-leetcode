@@ -8,7 +8,7 @@ import { editorActionController, IEditorAction } from "../editor/EditorActionCon
 export const CODE_LENS_BRIDGE_COMMAND: string = "editor.action.showReferences";
 
 const HEADER_SCAN_LIMIT: number = 64;
-const FOOTER_SCAN_LIMIT: number = 64;
+const CODE_START_PATTERN: RegExp = /^\s*(?:\/\/|#|--|\/\*|\*)\s*@lc code=start(?:\s*\*\/)?\s*$/;
 const CODE_END_MARKER: string = "@lc code=end";
 const FOOTER_PATTERN: RegExp = /^\s*(?:\/\/|#|--|\/\*|\*)\s*@lc code=end(?:\s*\*\/)?\s*$/;
 const ACTION_OFFSETS: ReadonlyMap<string, number> = new Map<string, number>([
@@ -45,8 +45,19 @@ export function findCodeLensDocumentMetadata(
         return undefined;
     }
 
-    const firstFooterLine: number = Math.max(0, document.lineCount - FOOTER_SCAN_LIMIT);
-    for (let lineNumber: number = document.lineCount - 1; lineNumber >= firstFooterLine; lineNumber--) {
+    let firstCodeStartLine: number = -1;
+    for (let lineNumber: number = 0; lineNumber < document.lineCount; lineNumber++) {
+        if (CODE_START_PATTERN.test(document.lineAt(lineNumber).text)) {
+            firstCodeStartLine = lineNumber;
+            break;
+        }
+    }
+
+    // The generated file has one authoritative code block. Search forward from
+    // its first start marker so a pasted copy below it cannot steal the actions.
+    // Older hand-written files without a start marker keep the forward fallback.
+    const firstFooterLine: number = firstCodeStartLine >= 0 ? firstCodeStartLine + 1 : 0;
+    for (let lineNumber: number = firstFooterLine; lineNumber < document.lineCount; lineNumber++) {
         const lineText: string = document.lineAt(lineNumber).text;
         if (!FOOTER_PATTERN.test(lineText)) {
             continue;

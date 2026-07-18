@@ -7,7 +7,11 @@ import * as path from "path";
 import * as vscode from "vscode";
 import * as showCommands from "../src/commands/show";
 import { LiveShareCodeLensController } from "../src/codelens/LiveShareCodeLensController";
-import { CODE_LENS_BRIDGE_COMMAND } from "../src/codelens/LiveShareSafeCodeLensProvider";
+import {
+    CODE_LENS_BRIDGE_COMMAND,
+    findCodeLensDocumentMetadata,
+    ICodeLensDocumentMetadata,
+} from "../src/codelens/LiveShareSafeCodeLensProvider";
 import { LeetCodeNode } from "../src/explorer/LeetCodeNode";
 import { leetCodeExecutor } from "../src/leetCodeExecutor";
 import { DescriptionConfiguration, IProblem, ProblemState } from "../src/shared";
@@ -754,6 +758,84 @@ export async function run(): Promise<void> {
                 assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri, 5);
             codeLensController.refresh();
             assertInlayHintActions(await getInlayHints(remoteDocument), remoteSolutionUri, 5);
+
+            const duplicateSolutionUri: vscode.Uri =
+                vscode.Uri.parse("vscode-remote://probe/code/1.two-sum.cpp");
+            const authoritativeSolutionText: string = [
+                "// @lc app=leetcode id=1 lang=cpp",
+                "",
+                "// @lc code=start",
+                "class Solution {};",
+                "// @lc code=end",
+                "",
+            ].join("\n");
+            remoteProvider.writeFile(
+                duplicateSolutionUri,
+                Buffer.from(authoritativeSolutionText, "utf8"),
+            );
+            const duplicateDocument: vscode.TextDocument =
+                await vscode.workspace.openTextDocument(duplicateSolutionUri);
+            try {
+                await vscode.window.showTextDocument(duplicateDocument, { preview: false });
+                assertInlayHintActions(
+                    await getInlayHints(duplicateDocument),
+                    duplicateSolutionUri,
+                    5,
+                );
+
+                const pastedCopy: string = [
+                    "// @lc app=leetcode id=1 lang=cpp",
+                    "",
+                    "// @lc code=start",
+                    "class DuplicateSolution {};",
+                    "// @lc code=end",
+                ].join("\n");
+                const pasteEdit: vscode.WorkspaceEdit = new vscode.WorkspaceEdit();
+                pasteEdit.insert(duplicateSolutionUri, new vscode.Position(5, 0), pastedCopy);
+                assert.strictEqual(await vscode.workspace.applyEdit(pasteEdit), true);
+                await waitFor(
+                    () => duplicateDocument.lineCount === 11 &&
+                        duplicateDocument.lineAt(5).isEmptyOrWhitespace,
+                    "The action line was not restored between the authoritative block and its pasted copy.",
+                );
+                const duplicatedMetadata: ICodeLensDocumentMetadata | undefined =
+                    findCodeLensDocumentMetadata(duplicateDocument);
+                assert.ok(duplicatedMetadata);
+                assert.strictEqual(
+                    duplicatedMetadata.footerLine,
+                    4,
+                    "A pasted code block must not steal the editor actions from the first generated block.",
+                );
+                assertInlayHintActions(
+                    await getInlayHints(duplicateDocument),
+                    duplicateSolutionUri,
+                    5,
+                );
+
+                const removeCopyEdit: vscode.WorkspaceEdit = new vscode.WorkspaceEdit();
+                removeCopyEdit.replace(
+                    duplicateSolutionUri,
+                    new vscode.Range(
+                        new vscode.Position(0, 0),
+                        duplicateDocument.positionAt(duplicateDocument.getText().length),
+                    ),
+                    authoritativeSolutionText.trimEnd(),
+                );
+                assert.strictEqual(await vscode.workspace.applyEdit(removeCopyEdit), true);
+                await waitFor(
+                    () => duplicateDocument.lineCount === 6 &&
+                        duplicateDocument.lineAt(5).isEmptyOrWhitespace,
+                    "Deleting a pasted block did not recreate the footer action line.",
+                );
+                assert.ok(duplicateDocument.getText().endsWith("\n"));
+                assertInlayHintActions(
+                    await getInlayHints(duplicateDocument),
+                    duplicateSolutionUri,
+                    5,
+                );
+            } finally {
+                await vscode.workspace.fs.delete(duplicateSolutionUri);
+            }
 
             const guestEditor: vscode.TextEditor =
                 await vscode.window.showTextDocument(solutionDocument, { preview: false });
