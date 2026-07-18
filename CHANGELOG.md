@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.21.6
+
+- Register every clickable command synchronously before the first asynchronous activation step. A restored Codespaces or Live Share action can no longer race command registration and report `Actual command not found` on its first click.
+- Gate early clicks on the in-progress activation: the first click now shows `Starting LeetCode...`, waits for initialization, and automatically executes exactly once without requiring a second click.
+- Add a VS Code Extension Host regression that invokes a command before activation readiness, verifies it remains deferred, and proves both the deferred first click and later clicks execute once.
+
 ## 0.21.5
 
 - Bind editor actions to the first generated code block instead of the last `@lc code=end`, so pasting a complete problem below the original cannot move the action strip to the duplicate.
