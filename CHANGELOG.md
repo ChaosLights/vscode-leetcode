@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.10
+
+- Confirm that Live Share actually reaches the Guest role after `join()` returns; the pinned Live Share API can resolve the command before asynchronously rejecting an inactive invitation.
+- Renew ready leases every 20 seconds and cap their effective lifetime at 75 seconds, including legacy leases that advertised a longer expiry, so a closed host cannot keep redirecting launchers to an ended session.
+- Await host-lease release during extension deactivation and capture starting-host ownership before Live Share begins, preventing window close, extension upgrade, or reload from leaving a stale pairing lease.
+- Add VS Code Extension Host regression coverage for delayed guest-role confirmation, inactive-session timeout, legacy-heartbeat expiry, and awaited shutdown release.
+
 ## 0.22.9
 
 - Reuse one machine-managed election comment per GitHub user by updating it for each generation instead of appending a hidden-only comment on every launcher run.
