@@ -7,7 +7,7 @@ class LeetCodeChannel implements vscode.Disposable {
     private readonly channel: vscode.OutputChannel = vscode.window.createOutputChannel("LeetCode");
 
     public appendLine(message: string): void {
-        this.channel.appendLine(message);
+        this.channel.appendLine(`[${new Date().toISOString()}] ${message}`);
     }
 
     public append(message: string): void {

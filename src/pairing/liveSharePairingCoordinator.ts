@@ -24,6 +24,7 @@ import {
     renderCandidateComment,
     validatePairingTarget,
 } from "./pairingProtocol";
+import { PairingAuditFields, pairingAuditLog } from "./pairingAuditLog";
 
 const electionWindowMs: number = 3_000;
 const candidateLifetimeMs: number = 45_000;
@@ -51,16 +52,23 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     private hostedNonce: string | undefined;
 
     public initializeAutoHost(): void {
-        // `gh codespace code` first opens a local, empty window and only then
-        // changes that window to a Codespace workspace. At extension activation
-        // time remoteName can therefore still be undefined. Keep a lightweight
-        // monitor alive and let checkForHostRequest() decide when the window is
-        // actually attached to the elected Codespace.
+        pairingAuditLog.event("auto_host.monitor_started", {
+            remoteName: vscode.env.remoteName || "none",
+            workspaceCount: (vscode.workspace.workspaceFolders || []).length,
+        });
+        const auditPath: string | undefined = pairingAuditLog.getPath();
+        if (auditPath) {
+            leetCodeChannel.appendLine(`[pairing] Timestamped audit log: ${auditPath}`);
+        }
+        // The local launcher window can change into a Codespace workspace.
+        // Keep a lightweight monitor alive and let checkForHostRequest()
+        // recognize the elected Codespace after the remote resolver attaches.
         void this.checkForHostRequest();
         this.autoHostTimer = setInterval(() => void this.checkForHostRequest(), 15_000);
     }
 
     public async startFromCommand(): Promise<void> {
+        pairingAuditLog.event("pairing.command_requested");
         await this.start(this.getConfiguredTarget());
     }
 
@@ -76,6 +84,13 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             requested.issueNumber !== configured.issueNumber) {
             throw new Error("The launcher target does not match this extension's configured pairing issue.");
         }
+        const launcherRunId: string = query.get("runId") || "none";
+        pairingAuditLog.event("pairing.launcher_uri_received", {
+            launcherRunId: /^[a-f0-9-]{8,64}$/i.test(launcherRunId) ? launcherRunId : "invalid",
+            repository: requested.repository,
+            issueNumber: requested.issueNumber,
+            branch: requested.branch,
+        });
         await this.start(requested);
     }
 
@@ -89,9 +104,15 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
     private async start(target: IPairingTarget): Promise<void> {
         if (this.activeStart) {
+            pairingAuditLog.event("pairing.start_deduplicated");
             await this.activeStart;
             return;
         }
+        pairingAuditLog.event("pairing.start", {
+            repository: target.repository,
+            issueNumber: target.issueNumber,
+            branch: target.branch,
+        });
         this.activeStart = vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -107,12 +128,15 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         } catch (error) {
             if (this.isNamedError(error, pairingCancelledErrorName)) {
                 leetCodeChannel.appendLine("[pairing] Start cancelled.");
+                pairingAuditLog.event("pairing.cancelled");
                 return;
             }
             const message: string = this.errorMessage(error);
             leetCodeChannel.appendLine(`[pairing] ${message}`);
+            pairingAuditLog.event("pairing.failed", { error: this.safeStateError(error) });
             void vscode.window.showErrorMessage(`LeetCode Pairing failed: ${message}`);
         } finally {
+            pairingAuditLog.event("pairing.start_finished");
             this.activeStart = undefined;
         }
     }
@@ -122,14 +146,17 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         progress: vscode.Progress<{ message?: string }>,
         token: vscode.CancellationToken,
     ): Promise<void> {
+        await this.ensureLocalExtensionKinds();
         const api: ILiveShareApi = await this.requireLiveShareApi();
         progress.report({ message: "Checking GitHub session..." });
         const login: string = await this.github.getLogin();
+        pairingAuditLog.event("github.login_ready", { login });
 
         for (let attempt: number = 0; attempt < 4; attempt++) {
             try {
                 this.throwIfCancelled(token);
                 const state: IPairingState = await this.github.getIssueState(target);
+                this.auditState("coordinator.state_read", state, { attempt: attempt + 1 });
                 if (isLeaseActive(state)) {
                     await this.followActiveLease(target, state, login, undefined, api, progress, token);
                     return;
@@ -140,6 +167,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 if (!this.isNamedError(error, retryElectionErrorName)) {
                     throw error;
                 }
+                pairingAuditLog.event("election.retry", {
+                    attempt: attempt + 1,
+                    reason: this.safeStateError(error),
+                });
             }
         }
         throw new Error("The pairing host changed repeatedly. Try the launcher again.");
@@ -164,6 +195,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         };
         progress.report({ message: "Electing the first participant as host..." });
         const ownComment = await this.github.postCandidate(target, renderCandidateComment(candidate));
+        pairingAuditLog.event("election.candidate_posted", {
+            generation,
+            login,
+            commentId: ownComment.id,
+        });
         await this.wait(electionWindowMs, token);
 
         const winner = chooseElectionWinner(
@@ -175,9 +211,17 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         if (!winner) {
             throw this.namedError(retryElectionErrorName, "No active election candidate was found.");
         }
+        pairingAuditLog.event("election.winner_selected", {
+            generation,
+            winnerLogin: winner.candidate.login,
+            winnerCommentId: winner.commentId,
+            ownCommentId: ownComment.id,
+        });
         if (winner.commentId !== ownComment.id) {
             progress.report({ message: `Waiting for ${winner.candidate.login} to start Live Share...` });
-            await this.waitForLease(target, generation, login, nonce, api, progress, token);
+            await this.waitForLease(
+                target, generation, login, nonce, api, progress, token, undefined, winner.candidate.login,
+            );
             return;
         }
 
@@ -203,22 +247,29 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             error: null,
         };
         await this.github.updateIssueState(target, starting);
+        this.auditState("lease.starting_published", starting);
 
         try {
             progress.report({ message: "Preparing your Codespace..." });
             const codespaceName: string = await this.getOrCreateCodespace(target);
+            pairingAuditLog.event("codespace.selected", { generation, codespaceName });
             starting.codespaceName = codespaceName;
             starting.updatedAt = new Date().toISOString();
             starting.leaseExpiresAt = new Date(Date.now() + startingLeaseMs).toISOString();
             await this.github.updateIssueState(target, starting);
+            this.auditState("lease.codespace_published", starting);
 
             await this.ensureCodespaceAvailable(codespaceName, progress, token);
             progress.report({ message: "Opening the host Codespace..." });
+            pairingAuditLog.event("codespace.open_requested", { generation, codespaceName, attempt: 1 });
             await this.openCodespace(codespaceName, login, progress);
-            await this.waitForLease(target, generation, login, nonce, api, progress, token, codespaceName);
+            await this.waitForLease(
+                target, generation, login, nonce, api, progress, token, codespaceName, login,
+            );
         } catch (error) {
             const failed: IPairingState = createIdleState(generation, this.safeStateError(error));
             await this.github.updateIssueState(target, failed).catch(() => undefined);
+            this.auditState("lease.error_published", failed);
             throw error;
         }
     }
@@ -232,6 +283,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         progress: vscode.Progress<{ message?: string }>,
         token: vscode.CancellationToken,
         hostCodespaceName?: string,
+        expectedHostLogin?: string,
     ): Promise<void> {
         const deadline: number = Date.now() + startingLeaseMs;
         const stateAdvanceDeadline: number = Date.now() + candidateLifetimeMs;
@@ -240,11 +292,19 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         while (Date.now() < deadline) {
             this.throwIfCancelled(token);
             const state: IPairingState = await this.github.getIssueState(target);
+            this.auditState("lease.wait_poll", state, {
+                expectedGeneration: generation,
+                openAttempt,
+            });
             if (state.generation < generation && Date.now() >= stateAdvanceDeadline) {
-                throw this.namedError(retryElectionErrorName, "The elected candidate did not claim the host lease.");
+                throw this.hostFailure(
+                    login, expectedHostLogin, "The elected candidate did not claim the host lease.",
+                );
             }
             if (state.generation > generation || (state.generation === generation && !isLeaseActive(state))) {
-                throw this.namedError(retryElectionErrorName, "The host lease expired before Live Share became ready.");
+                throw this.hostFailure(
+                    login, expectedHostLogin, "The host lease expired before Live Share became ready.",
+                );
             }
             if (state.generation === generation && state.status === "ready" && isLeaseActive(state)) {
                 await this.followActiveLease(target, state, login, nonce, api, progress, token);
@@ -262,6 +322,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 openAttempt++;
                 progress.report({ message: `Codespace did not connect; reopening it (attempt ${openAttempt})...` });
                 leetCodeChannel.appendLine("[pairing] Codespace did not publish readiness; retrying its open request.");
+                pairingAuditLog.event("codespace.open_requested", {
+                    generation,
+                    codespaceName: hostCodespaceName,
+                    attempt: openAttempt,
+                });
                 try {
                     await this.openCodespace(hostCodespaceName, login, progress);
                 } catch (error) {
@@ -277,7 +342,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             }
             await this.wait(pollIntervalMs, token);
         }
-        throw this.namedError(retryElectionErrorName, "Timed out waiting for the host.");
+        throw this.hostFailure(login, expectedHostLogin, "Timed out waiting for the host.");
     }
 
     private async followActiveLease(
@@ -294,7 +359,8 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 ? state.codespaceName
                 : undefined;
             await this.waitForLease(
-                target, state.generation, login, nonce || "", api, progress, token, recoverCodespaceName,
+                target, state.generation, login, nonce || "", api, progress, token,
+                recoverCodespaceName, state.hostLogin || undefined,
             );
             return;
         }
@@ -312,20 +378,40 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             throw new Error("The pairing issue contains an invalid Live Share invitation.");
         }
         if (api.session.role === LiveShareRole.Guest) {
+            pairingAuditLog.event("live_share.join_skipped_already_guest", { generation: state.generation });
             return;
         }
         if (api.session.role === LiveShareRole.Host) {
             throw new Error("End your current Live Share host session before joining another host.");
         }
         progress.report({ message: `Joining ${state.hostLogin || "your friend"}'s Live Share session...` });
+        pairingAuditLog.event("live_share.join_started", {
+            generation: state.generation,
+            hostLogin: state.hostLogin,
+        });
         try {
             await api.join(vscode.Uri.parse(state.joinUrl), { newWindow: false });
+            pairingAuditLog.event("live_share.join_succeeded", {
+                generation: state.generation,
+                hostLogin: state.hostLogin,
+            });
         } catch (error) {
+            pairingAuditLog.event("live_share.join_failed", {
+                generation: state.generation,
+                hostLogin: state.hostLogin,
+                error: this.safeStateError(error),
+            });
             if (!this.isInactiveLiveShareSessionError(error) ||
                 !await this.clearUnchangedStaleReadyLease(target, state)) {
                 throw error;
             }
             leetCodeChannel.appendLine("[pairing] Removed an inactive Live Share invitation; restarting host election.");
+            if (state.hostLogin !== login) {
+                throw new Error(
+                    `The previous Live Share session from ${state.hostLogin || "the host"} ended. ` +
+                    "The waiting participant will not become host automatically; ask the original host to rerun the launcher.",
+                );
+            }
             throw this.namedError(retryElectionErrorName, "The previous Live Share session ended.");
         }
     }
@@ -343,6 +429,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             return false;
         }
         await this.github.updateIssueState(target, createIdleState(latest.generation));
+        pairingAuditLog.event("lease.stale_ready_cleared", {
+            generation: latest.generation,
+            hostLogin: latest.hostLogin,
+        });
         return true;
     }
 
@@ -359,12 +449,18 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             }
             const login: string = await this.github.getLogin();
             const state: IPairingState = await this.github.getIssueState(target);
+            this.auditState("auto_host.state_read", state, { login, codespaceName });
             if ((state.status !== "starting" && state.status !== "ready") || !isLeaseActive(state) ||
                 state.hostLogin !== login || state.codespaceName !== codespaceName || !state.hostNonce) {
                 return;
             }
 
             const api: ILiveShareApi = await this.requireLiveShareApi();
+            pairingAuditLog.event("auto_host.live_share_ready", {
+                generation: state.generation,
+                role: api.session.role,
+                codespaceName,
+            });
             if (api.session.role === LiveShareRole.Guest) {
                 throw new Error("This Codespace is already a Live Share guest and cannot become the host.");
             }
@@ -384,6 +480,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 return;
             }
             leetCodeChannel.appendLine(`[pairing] Starting Live Share for generation ${state.generation}.`);
+            pairingAuditLog.event("live_share.share_started", {
+                generation: state.generation,
+                codespaceName,
+                priorRole: api.session.role,
+            });
             // Calling share() while already hosting retrieves the existing link,
             // but Live Share rejects an access-level option after the session has
             // started. This path recovers cleanly when VS Code reloads between
@@ -416,6 +517,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                     `Live Share returned an unexpected invitation origin (${this.describeLinkOrigin(link)}).`,
                 );
             }
+            pairingAuditLog.event("live_share.share_succeeded", {
+                generation: state.generation,
+                codespaceName,
+                invitationOrigin: this.describeLinkOrigin(link),
+            });
 
             const latest: IPairingState = await this.github.getIssueState(target);
             if ((latest.status !== "starting" && latest.status !== "ready") || latest.generation !== state.generation ||
@@ -432,6 +538,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 error: null,
             };
             await this.github.updateIssueState(target, ready);
+            this.auditState("lease.ready_published", ready);
             this.hostedTarget = target;
             this.hostedGeneration = ready.generation;
             this.hostedNonce = ready.hostNonce || undefined;
@@ -440,6 +547,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             void vscode.window.showInformationMessage("LeetCode Pairing is hosting. Your friend will join automatically.");
         } catch (error) {
             leetCodeChannel.appendLine(`[pairing] Auto-host check failed: ${this.errorMessage(error)}`);
+            pairingAuditLog.event("auto_host.failed", { error: this.safeStateError(error) });
         } finally {
             this.autoHostBusy = false;
         }
@@ -471,6 +579,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             state.updatedAt = new Date().toISOString();
             state.leaseExpiresAt = new Date(Date.now() + readyLeaseMs).toISOString();
             await this.github.updateIssueState(this.hostedTarget, state);
+            this.auditState("lease.heartbeat", state);
         } catch (error) {
             leetCodeChannel.appendLine(`[pairing] Host heartbeat failed: ${this.errorMessage(error)}`);
         }
@@ -496,6 +605,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             const state: IPairingState = await this.github.getIssueState(this.hostedTarget);
             if (state.generation === this.hostedGeneration && state.hostNonce === this.hostedNonce) {
                 await this.github.updateIssueState(this.hostedTarget, createIdleState(state.generation));
+                pairingAuditLog.event("lease.released", { generation: state.generation });
             }
         } catch (error) {
             leetCodeChannel.appendLine(`[pairing] Unable to release host lease: ${this.errorMessage(error)}`);
@@ -515,7 +625,17 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             .sort((left: ICodespaceSummary, right: ICodespaceSummary) =>
                 Date.parse(right.lastUsedAt) - Date.parse(left.lastUsedAt),
             )[0];
-        return reusable ? reusable.name : await this.github.createCodespace(target);
+        if (reusable) {
+            pairingAuditLog.event("codespace.reused", {
+                codespaceName: reusable.name,
+                state: reusable.state,
+            });
+            return reusable.name;
+        }
+        pairingAuditLog.event("codespace.create_started", { repository: target.repository });
+        const created: string = await this.github.createCodespace(target);
+        pairingAuditLog.event("codespace.create_succeeded", { codespaceName: created });
+        return created;
     }
 
     private async ensureCodespaceAvailable(
@@ -528,6 +648,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         while (Date.now() < deadline) {
             this.throwIfCancelled(token);
             const state: string = await this.github.getCodespaceState(name);
+            pairingAuditLog.event("codespace.state_read", { codespaceName: name, state });
             if (state === "Available") {
                 return;
             }
@@ -560,6 +681,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             throw new Error("GitHub Codespaces is not installed in this local VS Code profile.");
         }
         await codespacesExtension.activate();
+        pairingAuditLog.event("codespace.extension_activated", {
+            version: codespacesExtension.packageJSON.version || "unknown",
+            extensionKind: codespacesExtension.extensionKind,
+        });
 
         let accounts: readonly vscode.AuthenticationSessionAccountInformation[] =
             await vscode.authentication.getAccounts("github");
@@ -580,7 +705,36 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         }
 
         leetCodeChannel.appendLine(`[pairing] Asking GitHub Codespaces to connect to ${name}.`);
+        pairingAuditLog.event("codespace.connect_command_started", {
+            codespaceName: name,
+            expectedLogin,
+        });
         await vscode.commands.executeCommand("github.codespaces.connect", { codespaceName: name });
+        pairingAuditLog.event("codespace.connect_command_returned", { codespaceName: name });
+    }
+
+    private async ensureLocalExtensionKinds(): Promise<void> {
+        const configuration: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration("remote");
+        const existing: { [extensionId: string]: string[] } =
+            configuration.get<{ [extensionId: string]: string[] }>("extensionKind", {});
+        const required: { [extensionId: string]: string[] } = {
+            "LeetCode.vscode-leetcode": ["ui"],
+            "GitHub.codespaces": ["ui"],
+            "ms-vsliveshare.vsliveshare": ["ui"],
+            "pomdtr.excalidraw-editor": ["ui"],
+        };
+        const merged: { [extensionId: string]: string[] } = { ...existing, ...required };
+        const changed: boolean = Object.keys(required).some((extensionId: string) =>
+            JSON.stringify(existing[extensionId]) !== JSON.stringify(required[extensionId]),
+        );
+        if (changed) {
+            await configuration.update("extensionKind", merged, vscode.ConfigurationTarget.Global);
+        }
+        pairingAuditLog.event("extension_kinds.verified", {
+            changed,
+            liveShare: (merged["ms-vsliveshare.vsliveshare"] || []).join(","),
+            codespaces: (merged["GitHub.codespaces"] || []).join(","),
+        });
     }
 
     private async requireLiveShareApi(): Promise<ILiveShareApi> {
@@ -696,10 +850,34 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         }
     }
 
+    private auditState(event: string, state: IPairingState, fields: PairingAuditFields = {}): void {
+        pairingAuditLog.event(event, {
+            generation: state.generation,
+            status: state.status,
+            hostLogin: state.hostLogin,
+            codespaceName: state.codespaceName,
+            updatedAt: state.updatedAt,
+            leaseExpiresAt: state.leaseExpiresAt,
+            hasJoinUrl: Boolean(state.joinUrl),
+            error: state.error,
+            ...fields,
+        });
+    }
+
     private namedError(name: string, message: string): Error {
         const error: Error = new Error(message);
         error.name = name;
         return error;
+    }
+
+    private hostFailure(login: string, expectedHostLogin: string | undefined, message: string): Error {
+        if (expectedHostLogin && expectedHostLogin !== login) {
+            return new Error(
+                `${message} ${expectedHostLogin} must rerun the launcher; ` +
+                `${login} will remain a guest and will not open another Codespace automatically.`,
+            );
+        }
+        return this.namedError(retryElectionErrorName, message);
     }
 
     private isNamedError(error: unknown, name: string): boolean {

@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.22.8
+
+- Write a persistent UTC JSONL pairing audit for every local extension host, covering election candidates and winners, lease state transitions, Codespace selection and connection, Live Share share/join results, heartbeats, stale-invite recovery, and errors without recording invitation URLs, cookies, tokens, or nonces.
+- Prefix every LeetCode output-channel line with an ISO UTC timestamp and print the audit-log path at pairing startup.
+- Persist the required UI extension placement globally before activating Live Share or connecting to a Codespace, and keep Live Share as an install pack instead of a pre-activated dependency, so local and remote extension hosts cannot collide while registering the same commands.
+- Keep a waiting participant in the guest role when the elected host fails or an invitation expires; only that original host may rerun the launcher and recover the lease, preventing a second surprise Codespace.
+- Add a timestamped Windows launcher transcript, a stable run ID shared with the VS Code URI, an always-visible terminal result, and a redacting one-click diagnostic collector for combining both computers' logs.
+
 ## 0.22.7
 
 - Open the elected host through the installed GitHub Codespaces extension command instead of `gh codespace code`. The CLI only dispatches a `vscode://` URI and reports success before VS Code connects, which previously produced false-positive reopen attempts.
