@@ -32,12 +32,14 @@ const pollIntervalMs: number = 3_000;
 const codespaceOpenRetryMs: number = 20_000;
 const codespaceOpenMaxAttempts: number = 3;
 const startingLeaseMs: number = 15 * 60_000;
-const readyLeaseMs: number = 3 * 60_000;
-const heartbeatIntervalMs: number = 60_000;
+const readyLeaseMs: number = 75_000;
+const heartbeatIntervalMs: number = 20_000;
+const liveShareJoinConfirmationMs: number = 10_000;
 const codespaceReadyTimeoutMs: number = 10 * 60_000;
 
 const retryElectionErrorName: string = "LeetCodePairingRetryElection";
 const pairingCancelledErrorName: string = "LeetCodePairingCancelled";
+const inactiveLiveShareSessionErrorName: string = "LeetCodePairingInactiveLiveShareSession";
 
 export class LiveSharePairingCoordinator implements vscode.Disposable {
     private readonly github: GitHubCli = new GitHubCli();
@@ -50,6 +52,9 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     private hostedTarget: IPairingTarget | undefined;
     private hostedGeneration: number | undefined;
     private hostedNonce: string | undefined;
+    private shutdownPromise: Promise<void> | undefined;
+    private releaseHostLeasePromise: Promise<void> | undefined;
+    private disposed: boolean = false;
 
     public initializeAutoHost(): void {
         pairingAuditLog.event("auto_host.monitor_started", {
@@ -95,11 +100,23 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     public dispose(): void {
+        void this.shutdown();
+    }
+
+    public shutdown(): Promise<void> {
+        if (this.shutdownPromise) {
+            return this.shutdownPromise;
+        }
+        this.disposed = true;
         if (this.autoHostTimer) {
             clearInterval(this.autoHostTimer);
+            this.autoHostTimer = undefined;
         }
         this.stopHeartbeat();
         this.sessionSubscription?.dispose();
+        this.sessionSubscription = undefined;
+        this.shutdownPromise = this.releaseHostLease();
+        return this.shutdownPromise;
     }
 
     private async start(target: IPairingTarget): Promise<void> {
@@ -377,6 +394,15 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         if (!state.joinUrl || !isAllowedLiveShareUrl(state.joinUrl)) {
             throw new Error("The pairing issue contains an invalid Live Share invitation.");
         }
+        if (!this.isReadyHeartbeatFresh(state) &&
+            await this.clearUnchangedStaleReadyLease(target, state)) {
+            leetCodeChannel.appendLine("[pairing] Removed a ready lease whose host heartbeat stopped.");
+            pairingAuditLog.event("lease.stale_heartbeat_cleared", {
+                generation: state.generation,
+                hostLogin: state.hostLogin,
+            });
+            throw this.namedError(retryElectionErrorName, "The previous host stopped responding.");
+        }
         if (api.session.role === LiveShareRole.Guest) {
             pairingAuditLog.event("live_share.join_skipped_already_guest", { generation: state.generation });
             return;
@@ -391,6 +417,12 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         });
         try {
             await api.join(vscode.Uri.parse(state.joinUrl), { newWindow: false });
+            pairingAuditLog.event("live_share.join_command_returned", {
+                generation: state.generation,
+                hostLogin: state.hostLogin,
+                role: api.session.role,
+            });
+            await this.waitForLiveShareRole(api, LiveShareRole.Guest, liveShareJoinConfirmationMs, token);
             pairingAuditLog.event("live_share.join_succeeded", {
                 generation: state.generation,
                 hostLogin: state.hostLogin,
@@ -437,7 +469,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     private async checkForHostRequest(): Promise<void> {
-        if (this.autoHostBusy || !this.isAutoHostEnabled()) {
+        if (this.disposed || this.autoHostBusy || !this.isAutoHostEnabled()) {
             return;
         }
         this.autoHostBusy = true;
@@ -454,8 +486,17 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 state.hostLogin !== login || state.codespaceName !== codespaceName || !state.hostNonce) {
                 return;
             }
+            // Capture ownership before any Live Share awaits so deactivate()
+            // can release even a host request that is still starting.
+            this.hostedTarget = target;
+            this.hostedGeneration = state.generation;
+            this.hostedNonce = state.hostNonce;
 
             const api: ILiveShareApi = await this.requireLiveShareApi();
+            if (this.disposed) {
+                await this.releaseHostLease();
+                return;
+            }
             pairingAuditLog.event("auto_host.live_share_ready", {
                 generation: state.generation,
                 role: api.session.role,
@@ -598,21 +639,69 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
     private async releaseHostLease(): Promise<void> {
         this.stopHeartbeat();
+        if (this.releaseHostLeasePromise) {
+            return this.releaseHostLeasePromise;
+        }
         if (!this.hostedTarget || this.hostedGeneration === undefined || !this.hostedNonce) {
             return;
         }
+        const target: IPairingTarget = this.hostedTarget;
+        const generation: number = this.hostedGeneration;
+        const nonce: string = this.hostedNonce;
+        this.releaseHostLeasePromise = this.releaseHostLeaseCore(target, generation, nonce);
         try {
-            const state: IPairingState = await this.github.getIssueState(this.hostedTarget);
-            if (state.generation === this.hostedGeneration && state.hostNonce === this.hostedNonce) {
-                await this.github.updateIssueState(this.hostedTarget, createIdleState(state.generation));
+            await this.releaseHostLeasePromise;
+        } finally {
+            this.releaseHostLeasePromise = undefined;
+        }
+    }
+
+    private async releaseHostLeaseCore(
+        target: IPairingTarget,
+        generation: number,
+        nonce: string,
+    ): Promise<void> {
+        try {
+            const state: IPairingState = await this.github.getIssueState(target);
+            if (state.generation === generation && state.hostNonce === nonce) {
+                await this.github.updateIssueState(target, createIdleState(state.generation));
                 pairingAuditLog.event("lease.released", { generation: state.generation });
             }
         } catch (error) {
             leetCodeChannel.appendLine(`[pairing] Unable to release host lease: ${this.errorMessage(error)}`);
         } finally {
-            this.hostedTarget = undefined;
-            this.hostedGeneration = undefined;
-            this.hostedNonce = undefined;
+            if (this.hostedTarget === target && this.hostedGeneration === generation &&
+                this.hostedNonce === nonce) {
+                this.hostedTarget = undefined;
+                this.hostedGeneration = undefined;
+                this.hostedNonce = undefined;
+            }
+        }
+    }
+
+    private isReadyHeartbeatFresh(state: IPairingState, now: number = Date.now()): boolean {
+        const updatedAt: number = Date.parse(state.updatedAt);
+        return Number.isFinite(updatedAt) && updatedAt + readyLeaseMs > now;
+    }
+
+    private async waitForLiveShareRole(
+        api: ILiveShareApi,
+        expectedRole: LiveShareRole,
+        timeoutMs: number,
+        token: vscode.CancellationToken,
+    ): Promise<void> {
+        const deadline: number = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (api.session.role === expectedRole) {
+                return;
+            }
+            await this.wait(Math.min(250, deadline - Date.now()), token);
+        }
+        if (api.session.role !== expectedRole) {
+            throw this.namedError(
+                inactiveLiveShareSessionErrorName,
+                "The Live Share invitation did not become an active guest session.",
+            );
         }
     }
 
@@ -885,6 +974,9 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     private isInactiveLiveShareSessionError(error: unknown): boolean {
+        if (this.isNamedError(error, inactiveLiveShareSessionErrorName)) {
+            return true;
+        }
         const message: string = this.errorMessage(error).toLowerCase();
         return message.includes("collaboration session is no longer active") ||
             message.includes("session is no longer active") ||

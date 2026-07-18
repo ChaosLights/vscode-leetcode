@@ -15,6 +15,9 @@ import {
 } from "../src/codelens/LiveShareSafeCodeLensProvider";
 import { LeetCodeNode } from "../src/explorer/LeetCodeNode";
 import { leetCodeExecutor } from "../src/leetCodeExecutor";
+import { ILiveShareApi, LiveShareRole } from "../src/pairing/liveShareApi";
+import { LiveSharePairingCoordinator } from "../src/pairing/liveSharePairingCoordinator";
+import { IPairingState, IPairingTarget } from "../src/pairing/pairingProtocol";
 import { DescriptionConfiguration, IProblem, ProblemState } from "../src/shared";
 import {
     createWorkspaceTextFileAtomically,
@@ -198,6 +201,98 @@ async function expectSettledWithin(
             clearTimeout(timeout);
         }
     }
+}
+
+async function testPairingSessionLifecycle(): Promise<void> {
+    const target: IPairingTarget = {
+        repository: "ChaosLights/lc",
+        issueNumber: 8,
+        branch: "main",
+    };
+    const readyState: IPairingState = {
+        version: 1,
+        generation: 11,
+        status: "ready",
+        updatedAt: new Date(Date.now() - 20_000).toISOString(),
+        leaseExpiresAt: new Date(Date.now() + 55_000).toISOString(),
+        hostLogin: "ChaosLights",
+        hostNonce: "0123456789abcdef0123456789abcdef",
+        codespaceName: "effective-fishstick-g99rxrx9xrgfv9v5",
+        joinUrl: "https://prod.liveshare.vsengsaas.visualstudio.com/join?test",
+        error: null,
+    };
+    const coordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
+    const internals: {
+        github: {
+            getIssueState(pairingTarget: IPairingTarget): Promise<IPairingState>;
+            updateIssueState(pairingTarget: IPairingTarget, state: IPairingState): Promise<void>;
+        };
+        hostedTarget: IPairingTarget | undefined;
+        hostedGeneration: number | undefined;
+        hostedNonce: string | undefined;
+        isReadyHeartbeatFresh(state: IPairingState, now?: number): boolean;
+        waitForLiveShareRole(
+            api: ILiveShareApi,
+            role: LiveShareRole,
+            timeoutMs: number,
+            token: vscode.CancellationToken,
+        ): Promise<void>;
+    } = coordinator as unknown as typeof internals;
+    let releasedState: IPairingState | undefined;
+    internals.github = {
+        getIssueState: async (pairingTarget: IPairingTarget): Promise<IPairingState> => {
+            assert.deepStrictEqual(pairingTarget, target);
+            return { ...readyState };
+        },
+        updateIssueState: async (
+            pairingTarget: IPairingTarget,
+            state: IPairingState,
+        ): Promise<void> => {
+            assert.deepStrictEqual(pairingTarget, target);
+            releasedState = state;
+        },
+    };
+    internals.hostedTarget = target;
+    internals.hostedGeneration = readyState.generation;
+    internals.hostedNonce = readyState.hostNonce || undefined;
+
+    const now: number = Date.now();
+    assert.strictEqual(internals.isReadyHeartbeatFresh({
+        ...readyState,
+        updatedAt: new Date(now - 20_000).toISOString(),
+    }, now), true);
+    assert.strictEqual(internals.isReadyHeartbeatFresh({
+        ...readyState,
+        updatedAt: new Date(now - 80_000).toISOString(),
+    }, now), false);
+
+    let role: LiveShareRole = LiveShareRole.None;
+    const api: ILiveShareApi = {
+        get session() {
+            return { role };
+        },
+        onDidChangeSession: () => ({ dispose: () => undefined }),
+        share: async () => null,
+        join: async () => undefined,
+    };
+    const cancellation: vscode.CancellationTokenSource = new vscode.CancellationTokenSource();
+    const roleConfirmation: Promise<void> =
+        internals.waitForLiveShareRole(api, LiveShareRole.Guest, 1_000, cancellation.token);
+    setTimeout(() => {
+        role = LiveShareRole.Guest;
+    }, 50);
+    await roleConfirmation;
+    role = LiveShareRole.None;
+    await assert.rejects(
+        internals.waitForLiveShareRole(api, LiveShareRole.Guest, 30, cancellation.token),
+        /did not become an active guest session/i,
+    );
+    cancellation.dispose();
+
+    await coordinator.shutdown();
+    assert.ok(releasedState);
+    assert.strictEqual(releasedState?.status, "idle");
+    assert.strictEqual(releasedState?.generation, readyState.generation);
 }
 
 function testWorkspaceFileDeletionTrackerRevisions(): void {
@@ -573,6 +668,7 @@ class InMemoryFileSystemProvider implements vscode.FileSystemProvider {
 
 export async function run(): Promise<void> {
     await testActivationCommandGate();
+    await testPairingSessionLifecycle();
     testWorkspaceFileDeletionTrackerRevisions();
     await testDetachedHintDoesNotHoldShowProblemTask();
 

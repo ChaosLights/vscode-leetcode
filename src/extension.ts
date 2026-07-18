@@ -32,6 +32,8 @@ import { ActivationCommandGate } from "./activation/ActivationCommandGate";
 import { LiveSharePairingCoordinator } from "./pairing/liveSharePairingCoordinator";
 import { pairingAuditLog } from "./pairing/pairingAuditLog";
 
+let activePairingCoordinator: LiveSharePairingCoordinator | undefined;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
         return;
@@ -40,6 +42,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let codeLensController: LiveShareCodeLensController | undefined;
     const commandGate: ActivationCommandGate = new ActivationCommandGate();
     const pairingCoordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
+    activePairingCoordinator = pairingCoordinator;
 
     // Register every contributed command synchronously, before the first await.
     // Restored Remote/Live Share inlay hints can remain clickable while this
@@ -177,6 +180,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 }
 
-export function deactivate(): void {
-    // Do nothing.
+export async function deactivate(): Promise<void> {
+    const pairingCoordinator: LiveSharePairingCoordinator | undefined = activePairingCoordinator;
+    activePairingCoordinator = undefined;
+    if (pairingCoordinator) {
+        await pairingCoordinator.shutdown();
+    }
 }
