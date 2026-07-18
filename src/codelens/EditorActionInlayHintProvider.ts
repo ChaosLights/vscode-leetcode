@@ -26,18 +26,18 @@ export class EditorActionInlayHintProvider implements vscode.InlayHintsProvider,
         if (!metadata) {
             return [];
         }
-        const footerLine: vscode.TextLine = document.lineAt(metadata.footerLine);
         const lineAfterFooter: vscode.TextLine | undefined =
             metadata.footerLine + 1 < document.lineCount
                 ? document.lineAt(metadata.footerLine + 1)
                 : undefined;
-        // Generated solutions end with an empty line after @lc code=end. Put the
-        // local action strip there so it keeps the compact, separate-line layout
-        // of CodeLens without forwarding commands through Live Share. Older
-        // files without that trailing line safely fall back to the footer end.
-        const position: vscode.Position = lineAfterFooter?.isEmptyOrWhitespace
-            ? lineAfterFooter.range.end
-            : footerLine.range.end;
+        // Inlay hints cannot occupy a virtual line beyond the document. The
+        // controller materializes this empty action line after the authoritative
+        // footer; never fall back to the footer end because that produces the
+        // visually broken "code=endSubmit" layout while edits are settling.
+        if (!lineAfterFooter?.isEmptyOrWhitespace) {
+            return [];
+        }
+        const position: vscode.Position = lineAfterFooter.range.start;
         if (!range.contains(position)) {
             return [];
         }

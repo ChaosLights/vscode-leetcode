@@ -4,7 +4,11 @@
 import * as vscode from "vscode";
 import { CodeLensRecoveryController } from "./CodeLensRecoveryController";
 import { EditorActionInlayHintProvider } from "./EditorActionInlayHintProvider";
-import { LiveShareSafeCodeLensProvider } from "./LiveShareSafeCodeLensProvider";
+import {
+    findCodeLensDocumentMetadata,
+    ICodeLensDocumentMetadata,
+    LiveShareSafeCodeLensProvider,
+} from "./LiveShareSafeCodeLensProvider";
 import { LocalCodeLensCommandBridge } from "./LocalCodeLensCommandBridge";
 
 export const LOCAL_CODE_LENS_SELECTOR: vscode.DocumentSelector = [
@@ -23,6 +27,8 @@ export class LiveShareCodeLensController implements vscode.Disposable {
     private readonly recoveryController: CodeLensRecoveryController;
     private readonly disposables: vscode.Disposable[];
     private readonly hintRecoveryTimers: Set<NodeJS.Timeout> = new Set<NodeJS.Timeout>();
+    private readonly normalizingDocuments: Set<string> = new Set<string>();
+    private disposed: boolean = false;
 
     constructor(recoveryDelaysMs?: ReadonlyArray<number>) {
         this.provider = new LiveShareSafeCodeLensProvider();
@@ -39,9 +45,30 @@ export class LiveShareCodeLensController implements vscode.Disposable {
             providerRegistration,
             this.provider,
             new LocalCodeLensCommandBridge(),
-            vscode.window.onDidChangeActiveTextEditor(() => this.scheduleHintRecovery()),
-            vscode.window.onDidChangeVisibleTextEditors(() => this.scheduleHintRecovery()),
-            vscode.workspace.onDidOpenTextDocument(() => this.scheduleHintRecovery()),
+            vscode.window.onDidChangeActiveTextEditor((editor: vscode.TextEditor | undefined) => {
+                this.scheduleHintRecovery();
+                if (editor) {
+                    this.handleRemoteDocument(editor.document);
+                }
+            }),
+            vscode.window.onDidChangeVisibleTextEditors((editors: readonly vscode.TextEditor[]) => {
+                this.scheduleHintRecovery();
+                for (const editor of editors) {
+                    this.handleRemoteDocument(editor.document);
+                }
+            }),
+            vscode.workspace.onDidOpenTextDocument((document: vscode.TextDocument) => {
+                this.scheduleHintRecovery();
+                this.handleRemoteDocument(document);
+            }),
+            vscode.workspace.onDidChangeTextDocument((event: vscode.TextDocumentChangeEvent) => {
+                if (this.isRemoteActionDocument(event.document)) {
+                    this.hintProvider.refresh();
+                    void this.ensureFooterActionLine(event.document);
+                } else {
+                    this.provider.refresh();
+                }
+            }),
             vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
                 if (
                     event.affectsConfiguration("leetcode.editor.shortcuts") ||
@@ -52,6 +79,9 @@ export class LiveShareCodeLensController implements vscode.Disposable {
             }),
         ];
         this.scheduleHintRecovery();
+        for (const editor of vscode.window.visibleTextEditors) {
+            this.handleRemoteDocument(editor.document);
+        }
     }
 
     public refresh(): void {
@@ -62,12 +92,62 @@ export class LiveShareCodeLensController implements vscode.Disposable {
     }
 
     public dispose(): void {
+        this.disposed = true;
         for (const timer of this.hintRecoveryTimers) {
             clearTimeout(timer);
         }
         this.hintRecoveryTimers.clear();
         for (const disposable of this.disposables) {
             disposable.dispose();
+        }
+    }
+
+    private handleRemoteDocument(document: vscode.TextDocument): void {
+        if (!this.isRemoteActionDocument(document)) {
+            return;
+        }
+        this.hintProvider.refresh();
+        void this.ensureFooterActionLine(document);
+    }
+
+    private isRemoteActionDocument(document: vscode.TextDocument): boolean {
+        return document.uri.scheme === "vscode-remote" || document.uri.scheme === "vsls";
+    }
+
+    private async ensureFooterActionLine(document: vscode.TextDocument): Promise<void> {
+        const documentKey: string = document.uri.toString();
+        if (this.disposed || document.isClosed || this.normalizingDocuments.has(documentKey)) {
+            return;
+        }
+        const metadata: ICodeLensDocumentMetadata | undefined =
+            findCodeLensDocumentMetadata(document);
+        if (!metadata) {
+            return;
+        }
+
+        const lineAfterFooter: vscode.TextLine | undefined =
+            metadata.footerLine + 1 < document.lineCount
+                ? document.lineAt(metadata.footerLine + 1)
+                : undefined;
+        if (lineAfterFooter?.isEmptyOrWhitespace) {
+            return;
+        }
+
+        const edit: vscode.WorkspaceEdit = new vscode.WorkspaceEdit();
+        const endOfLine: string = document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+        if (lineAfterFooter) {
+            edit.insert(document.uri, lineAfterFooter.range.start, endOfLine);
+        } else {
+            edit.insert(document.uri, document.lineAt(metadata.footerLine).range.end, endOfLine);
+        }
+
+        this.normalizingDocuments.add(documentKey);
+        try {
+            if (await vscode.workspace.applyEdit(edit)) {
+                this.hintProvider.refresh();
+            }
+        } finally {
+            this.normalizingDocuments.delete(documentKey);
         }
     }
 
