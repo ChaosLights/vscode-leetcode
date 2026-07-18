@@ -29,6 +29,7 @@ const electionWindowMs: number = 3_000;
 const candidateLifetimeMs: number = 45_000;
 const pollIntervalMs: number = 3_000;
 const codespaceOpenRetryMs: number = 20_000;
+const codespaceOpenMaxAttempts: number = 3;
 const startingLeaseMs: number = 15 * 60_000;
 const readyLeaseMs: number = 3 * 60_000;
 const heartbeatIntervalMs: number = 60_000;
@@ -213,7 +214,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
             await this.ensureCodespaceAvailable(codespaceName, progress, token);
             progress.report({ message: "Opening the host Codespace..." });
-            await this.github.openCodespace(codespaceName);
+            await this.openCodespace(codespaceName, login, progress);
             await this.waitForLease(target, generation, login, nonce, api, progress, token, codespaceName);
         } catch (error) {
             const failed: IPairingState = createIdleState(generation, this.safeStateError(error));
@@ -252,13 +253,20 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             const now: number = Date.now();
             if (hostCodespaceName && now >= nextCodespaceOpenAt &&
                 canRetryCodespaceOpen(state, generation, login, hostCodespaceName, now)) {
+                if (openAttempt >= codespaceOpenMaxAttempts) {
+                    throw new Error(
+                        `VS Code did not connect to Codespace ${hostCodespaceName} after ` +
+                        `${codespaceOpenMaxAttempts} attempts. Open the GitHub Codespaces output channel for details.`,
+                    );
+                }
                 openAttempt++;
                 progress.report({ message: `Codespace did not connect; reopening it (attempt ${openAttempt})...` });
                 leetCodeChannel.appendLine("[pairing] Codespace did not publish readiness; retrying its open request.");
                 try {
-                    await this.github.openCodespace(hostCodespaceName);
+                    await this.openCodespace(hostCodespaceName, login, progress);
                 } catch (error) {
                     leetCodeChannel.appendLine(`[pairing] Codespace reopen failed: ${this.errorMessage(error)}`);
+                    throw error;
                 }
                 nextCodespaceOpenAt = Date.now() + codespaceOpenRetryMs;
                 await this.wait(pollIntervalMs, token);
@@ -536,6 +544,43 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             await this.wait(5_000, token);
         }
         throw new Error(`Codespace ${name} did not become available within 10 minutes.`);
+    }
+
+    private async openCodespace(
+        name: string,
+        expectedLogin: string,
+        progress: vscode.Progress<{ message?: string }>,
+    ): Promise<void> {
+        if (!/^[A-Za-z0-9-]{1,100}$/.test(name)) {
+            throw new Error("Refusing to open an invalid Codespace name.");
+        }
+        const codespacesExtension: vscode.Extension<unknown> | undefined =
+            vscode.extensions.getExtension("GitHub.codespaces");
+        if (!codespacesExtension) {
+            throw new Error("GitHub Codespaces is not installed in this local VS Code profile.");
+        }
+        await codespacesExtension.activate();
+
+        let accounts: readonly vscode.AuthenticationSessionAccountInformation[] =
+            await vscode.authentication.getAccounts("github");
+        if (!accounts.some((account) => account.label.toLowerCase() === expectedLogin.toLowerCase())) {
+            progress.report({ message: `Signing VS Code into GitHub as ${expectedLogin}...` });
+            const signInCommand: string = accounts.length === 0
+                ? "github.codespaces.signIn"
+                : "github.codespaces.switchUserAccount";
+            await vscode.commands.executeCommand(signInCommand);
+            accounts = await vscode.authentication.getAccounts("github");
+        }
+        if (!accounts.some((account) => account.label.toLowerCase() === expectedLogin.toLowerCase())) {
+            const visibleAccounts: string = accounts.map((account) => account.label).join(", ") || "none";
+            throw new Error(
+                `VS Code GitHub account (${visibleAccounts}) does not match GitHub CLI account ` +
+                `(${expectedLogin}). Use 'Codespaces: Switch User Account' and select ${expectedLogin}.`,
+            );
+        }
+
+        leetCodeChannel.appendLine(`[pairing] Asking GitHub Codespaces to connect to ${name}.`);
+        await vscode.commands.executeCommand("github.codespaces.connect", { codespaceName: name });
     }
 
     private async requireLiveShareApi(): Promise<ILiveShareApi> {

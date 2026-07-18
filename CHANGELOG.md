@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.7
+
+- Open the elected host through the installed GitHub Codespaces extension command instead of `gh codespace code`. The CLI only dispatches a `vscode://` URI and reports success before VS Code connects, which previously produced false-positive reopen attempts.
+- Activate the local Codespaces extension explicitly, verify that VS Code has the same GitHub account as GitHub CLI, and launch its account sign-in or switch flow when needed.
+- Stop after three unconfirmed connection attempts with an actionable error instead of leaving both participants on a 15-minute `starting` lease.
+- Propagate Codespaces connection errors immediately and direct users to the GitHub Codespaces output channel for its connection log.
+
 ## 0.22.6
 
 - Make first-time Codespace creation non-interactive by querying the current participant's available machine types, choosing the smallest Linux machine, and passing both the machine and default-permissions flags explicitly.
