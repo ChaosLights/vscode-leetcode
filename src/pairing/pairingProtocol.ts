@@ -80,6 +80,20 @@ export function isLeaseActive(state: IPairingState, now: number = Date.now()): b
     return Number.isFinite(expiresAt) && expiresAt > now;
 }
 
+export function canRetryCodespaceOpen(
+    state: IPairingState,
+    generation: number,
+    login: string,
+    codespaceName: string,
+    now: number = Date.now(),
+): boolean {
+    return state.generation === generation &&
+        state.status === "starting" &&
+        state.hostLogin === login &&
+        state.codespaceName === codespaceName &&
+        isLeaseActive(state, now);
+}
+
 export function parsePairingState(issueBody: string | null | undefined): IPairingState {
     const parsed: unknown = parseMarker(issueBody || "", stateStart);
     if (!isPairingState(parsed)) {

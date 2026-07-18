@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.5
+
+- Recover when `gh codespace code` exits successfully without opening a VS Code remote window. While the elected host lease remains in `starting`, the host launcher now reissues the idempotent open request every 20 seconds until the Codespace publishes Live Share readiness.
+- Let the same GitHub user recover a stuck active host lease by running the launcher again; guests continue to wait without attempting to open a Codespace they do not own.
+- Add pure protocol coverage for retry ownership, matching Codespace identity, and lease expiry.
+- Pin the GitHub Codespaces extension in the companion launcher so every potential first-opener has the required local remote resolver.
+
 ## 0.22.4
 
 - Fix the first-time signed-out path in the Windows pairing launcher. GitHub CLI reports the expected “not logged in” probe on stderr; Windows PowerShell previously promoted it to a terminating `NativeCommandError` before the automatic browser login could start.
