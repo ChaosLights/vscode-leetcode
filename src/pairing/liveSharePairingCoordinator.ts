@@ -269,6 +269,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         if (state.hostLogin === login && nonce && state.hostNonce === nonce) {
             progress.report({ message: "Live Share is ready in your Codespace." });
             void vscode.window.showInformationMessage("LeetCode Pairing is ready. You are the host.");
+            if (!vscode.env.remoteName && (vscode.workspace.workspaceFolders || []).length === 0) {
+                // The host now works in the Codespace window opened by gh; the
+                // local launcher window has no remaining purpose.
+                void vscode.commands.executeCommand("workbench.action.closeWindow");
+            }
             return;
         }
         if (!state.joinUrl || !isAllowedLiveShareUrl(state.joinUrl)) {
@@ -307,6 +312,12 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 throw new Error("This Codespace is already a Live Share guest and cannot become the host.");
             }
             if (state.status === "ready" && api.session.role === LiveShareRole.Host) {
+                if (this.heartbeatTimer && this.hostedGeneration === state.generation &&
+                    this.hostedNonce === state.hostNonce && this.hostedTarget &&
+                    this.hostedTarget.repository === target.repository &&
+                    this.hostedTarget.issueNumber === target.issueNumber) {
+                    return;
+                }
                 this.hostedTarget = target;
                 this.hostedGeneration = state.generation;
                 this.hostedNonce = state.hostNonce;
@@ -316,12 +327,37 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 return;
             }
             leetCodeChannel.appendLine(`[pairing] Starting Live Share for generation ${state.generation}.`);
-            const link: vscode.Uri | null = await api.share({
-                suppressNotification: true,
-                access: LiveShareAccess.ReadWrite,
-            });
+            // Calling share() while already hosting retrieves the existing link,
+            // but Live Share rejects an access-level option after the session has
+            // started. This path recovers cleanly when VS Code reloads between
+            // starting the session and publishing the ready lease.
+            let link: vscode.Uri | null = api.session.role === LiveShareRole.Host
+                ? await api.share({ suppressNotification: true })
+                : await api.share({
+                    suppressNotification: true,
+                    access: LiveShareAccess.ReadWrite,
+                });
+            // Live Share 1.1.122 starts the session successfully but its public
+            // share() wrapper can discard the command's link result and return
+            // null. The pinned extension also exposes its invitation-creation
+            // command, which returns the same current-session link without
+            // touching the clipboard or showing a prompt.
+            if (!link && api.session.role === LiveShareRole.Host) {
+                const recoveredLink: unknown = await vscode.commands.executeCommand(
+                    "liveshare.createInvitationLink",
+                    {},
+                );
+                if (typeof recoveredLink === "string") {
+                    link = vscode.Uri.parse(recoveredLink);
+                }
+            }
+            if (!link && api.session.role === LiveShareRole.Host) {
+                link = await this.recoverJoinLinkFromClipboard();
+            }
             if (!link || !isAllowedLiveShareUrl(link.toString())) {
-                throw new Error("Live Share did not return a valid invitation URL.");
+                throw new Error(
+                    `Live Share returned an unexpected invitation origin (${this.describeLinkOrigin(link)}).`,
+                );
             }
 
             const latest: IPairingState = await this.github.getIssueState(target);
@@ -516,6 +552,54 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
     private errorMessage(error: unknown): string {
         return error instanceof Error ? error.message : String(error);
+    }
+
+    private describeLinkOrigin(link: vscode.Uri | null): string {
+        if (!link) {
+            return "none";
+        }
+        try {
+            const parsed: vscode.Uri = vscode.Uri.parse(link.toString());
+            return `${parsed.scheme}://${parsed.authority || "none"}`;
+        } catch (_error) {
+            return "unparseable";
+        }
+    }
+
+    private async recoverJoinLinkFromClipboard(): Promise<vscode.Uri | null> {
+        const original: string = await vscode.env.clipboard.readText();
+        const sentinel: string = `leetcode-pairing-${crypto.randomBytes(12).toString("hex")}`;
+        await vscode.env.clipboard.writeText(sentinel);
+        let recovered: string | undefined;
+        try {
+            // The command copies before awaiting its informational toast. Do
+            // not await the command itself or automatic pairing would pause
+            // until somebody manually dismisses that notification.
+            void vscode.commands.executeCommand("liveshare.collaboration.link.copy").then(
+                undefined,
+                (error: unknown) => leetCodeChannel.appendLine(
+                    `[pairing] Copy-invitation fallback failed: ${this.errorMessage(error)}`,
+                ),
+            );
+            for (let attempt: number = 0; attempt < 20; attempt++) {
+                const current: string = await vscode.env.clipboard.readText();
+                if (current !== sentinel) {
+                    if (isAllowedLiveShareUrl(current)) {
+                        recovered = current;
+                    }
+                    break;
+                }
+                await new Promise<void>((resolve) => setTimeout(resolve, 100));
+            }
+            return recovered ? vscode.Uri.parse(recovered) : null;
+        } finally {
+            // Do not overwrite a value the user copied concurrently while the
+            // Live Share command was running.
+            const current: string = await vscode.env.clipboard.readText();
+            if (current === sentinel || (recovered !== undefined && current === recovered)) {
+                await vscode.env.clipboard.writeText(original);
+            }
+        }
     }
 
     private namedError(name: string, message: string): Error {

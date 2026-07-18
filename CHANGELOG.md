@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.22.2
+
+- Recover an elected host after Live Share has started but before its invitation was published. Retrieving an existing host link now omits the immutable access-level option instead of repeatedly failing with `Cannot change default access for an already shared session`.
+- Work around a Live Share 1.1.122 regression where the public `share()` wrapper starts hosting but returns `null`: retrieve the current session invitation through the pinned extension's invitation command without copying through the clipboard or exposing the session identifier in logs.
+- Fall back to Live Share's contributed Copy Invitation command when that internal return value is also discarded. The previous clipboard is restored immediately and a concurrent user copy is never overwritten.
+- Close the host's now-unused blank launcher window after the Codespace becomes ready, and avoid refreshing the same ready lease on every 15-second discovery poll when its heartbeat is already active.
+- Report only the scheme and authority when Live Share returns an unexpected invitation format, keeping the non-guessable session identifier out of logs while making current service-domain changes diagnosable.
+
 ## 0.22.1
 
 - Negotiate the Live Share 1.1.122 public API through Microsoft's official `vsls` adapter. Live Share identifies callers from the adapter's `node_modules` path; a direct call from this extension's nested compiled file activated Live Share but resolved `package.json` from the wrong directory and returned a null API before host election began.
