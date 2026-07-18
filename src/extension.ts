@@ -29,6 +29,7 @@ import { editorActionController } from "./editor/EditorActionController";
 import { LiveShareCodeLensController } from "./codelens/LiveShareCodeLensController";
 import { workspaceFileDeletionTracker } from "./utils/workspaceFileDeletionTracker";
 import { ActivationCommandGate } from "./activation/ActivationCommandGate";
+import { LiveSharePairingCoordinator } from "./pairing/liveSharePairingCoordinator";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
@@ -36,6 +37,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     let codeLensController: LiveShareCodeLensController | undefined;
     const commandGate: ActivationCommandGate = new ActivationCommandGate();
+    const pairingCoordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
 
     // Register every contributed command synchronously, before the first await.
     // Restored Remote/Live Share inlay hints can remain clickable while this
@@ -44,6 +46,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         leetCodeChannel,
         leetCodeExecutor,
+        pairingCoordinator,
+        vscode.window.registerUriHandler({
+            handleUri: async (uri: vscode.Uri): Promise<void> => {
+                if (/^\/pairing(?:\/|$)/i.test(uri.path)) {
+                    try {
+                        await pairingCoordinator.startFromUri(uri);
+                    } catch (error) {
+                        const message: string = error instanceof Error ? error.message : String(error);
+                        leetCodeChannel.appendLine(`[pairing] Launcher URI rejected: ${message}`);
+                        void vscode.window.showErrorMessage(`LeetCode Pairing failed: ${message}`);
+                    }
+                    return;
+                }
+                await leetCodeManager.handleUriSignIn(uri);
+            },
+        }),
+        vscode.commands.registerCommand("leetcode.startPairing", () => pairingCoordinator.startFromCommand()),
         vscode.commands.registerCommand("leetcode.diagnosePairing", () => diagnose.diagnosePairing(context)),
         vscode.commands.registerCommand("leetcode.deleteCache", commandGate.wrap(() => cache.deleteCache())),
         vscode.commands.registerCommand("leetcode.toggleLeetCodeCn", commandGate.wrap(() => plugin.switchEndpoint())),
@@ -103,6 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             commandGate.wrap((uri?: vscode.Uri) => editorActionController.show(uri)),
         ),
     );
+    pairingCoordinator.initializeAutoHost();
 
     try {
         const workspaceSchemes: string[] = Array.from(new Set(
@@ -145,7 +165,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
 
         await leetCodeExecutor.switchEndpoint(plugin.getLeetCodeEndpoint());
-        context.subscriptions.push(vscode.window.registerUriHandler({ handleUri: leetCodeManager.handleUriSignIn }));
         await leetCodeManager.getLoginStatus();
         commandGate.succeed();
     } catch (error) {

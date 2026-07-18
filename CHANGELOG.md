@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.22.0
+
+- Add a local `LeetCode: Start or Join Pairing Session` flow backed by a private GitHub Issue. Simultaneous participants elect exactly one host from GitHub's monotonic comment IDs; the winner reuses or creates their own Codespace, while later participants wait and join automatically.
+- Use Live Share's public extension API only for `share()` and `join()`. The pairing Issue contains no LeetCode cookie or GitHub token, accepts only known HTTPS Live Share invitation hosts, and uses short renewable leases so a crashed host cannot permanently block the session.
+- Register the pairing URI and command before LeetCode CLI initialization, and monitor Codespace windows for host leases even when they were already open or their extension host restarted.
+- Add strict repository/issue/branch validation, bounded GitHub CLI processes, cancellation, error redaction, host heartbeats, normal-session lease release, and unit coverage for election races, stale candidates, lease expiry, state serialization, and malicious invitation URLs.
+- Include Live Share and Excalidraw as extension-pack companions; the repository launcher pins and repairs all three local extension versions before every pairing session.
+
 ## 0.21.6
 
 - Register every clickable command synchronously before the first asynchronous activation step. A restored Codespaces or Live Share action can no longer race command registration and report `Actual command not found` on its first click.
