@@ -193,11 +193,6 @@ export class GitHubCli {
         ], 60_000);
     }
 
-    public async openCodespace(name: string): Promise<void> {
-        this.validateCodespaceName(name);
-        await this.run(["codespace", "code", "-c", name], 2 * 60_000);
-    }
-
     private async run(args: string[], timeoutMs: number = 30_000): Promise<string> {
         return await new Promise<string>((resolve, reject) => {
             cp.execFile("gh", args, {
