@@ -126,14 +126,13 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         const login: string = await this.github.getLogin();
 
         for (let attempt: number = 0; attempt < 4; attempt++) {
-            this.throwIfCancelled(token);
-            const state: IPairingState = await this.github.getIssueState(target);
-            if (isLeaseActive(state)) {
-                await this.followActiveLease(target, state, login, undefined, api, progress, token);
-                return;
-            }
-
             try {
+                this.throwIfCancelled(token);
+                const state: IPairingState = await this.github.getIssueState(target);
+                if (isLeaseActive(state)) {
+                    await this.followActiveLease(target, state, login, undefined, api, progress, token);
+                    return;
+                }
                 await this.runElection(target, state, login, api, progress, token);
                 return;
             } catch (error) {
@@ -274,7 +273,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     private async followActiveLease(
-        _target: IPairingTarget,
+        target: IPairingTarget,
         state: IPairingState,
         login: string,
         nonce: string | undefined,
@@ -287,7 +286,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
                 ? state.codespaceName
                 : undefined;
             await this.waitForLease(
-                _target, state.generation, login, nonce || "", api, progress, token, recoverCodespaceName,
+                target, state.generation, login, nonce || "", api, progress, token, recoverCodespaceName,
             );
             return;
         }
@@ -311,7 +310,32 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             throw new Error("End your current Live Share host session before joining another host.");
         }
         progress.report({ message: `Joining ${state.hostLogin || "your friend"}'s Live Share session...` });
-        await api.join(vscode.Uri.parse(state.joinUrl), { newWindow: false });
+        try {
+            await api.join(vscode.Uri.parse(state.joinUrl), { newWindow: false });
+        } catch (error) {
+            if (!this.isInactiveLiveShareSessionError(error) ||
+                !await this.clearUnchangedStaleReadyLease(target, state)) {
+                throw error;
+            }
+            leetCodeChannel.appendLine("[pairing] Removed an inactive Live Share invitation; restarting host election.");
+            throw this.namedError(retryElectionErrorName, "The previous Live Share session ended.");
+        }
+    }
+
+    private async clearUnchangedStaleReadyLease(
+        target: IPairingTarget,
+        attemptedState: IPairingState,
+    ): Promise<boolean> {
+        const latest: IPairingState = await this.github.getIssueState(target);
+        if (latest.status !== "ready" ||
+            latest.generation !== attemptedState.generation ||
+            latest.hostNonce !== attemptedState.hostNonce ||
+            latest.joinUrl !== attemptedState.joinUrl ||
+            latest.updatedAt !== attemptedState.updatedAt) {
+            return false;
+        }
+        await this.github.updateIssueState(target, createIdleState(latest.generation));
+        return true;
     }
 
     private async checkForHostRequest(): Promise<void> {
@@ -635,5 +659,12 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
     private isNamedError(error: unknown, name: string): boolean {
         return error instanceof Error && error.name === name;
+    }
+
+    private isInactiveLiveShareSessionError(error: unknown): boolean {
+        const message: string = this.errorMessage(error).toLowerCase();
+        return message.includes("collaboration session is no longer active") ||
+            message.includes("session is no longer active") ||
+            /\b(?:collaboration|live share)\s+session\b.*\b(?:ended|expired|inactive|not found)\b/.test(message);
     }
 }

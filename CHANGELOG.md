@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.6
+
+- Make first-time Codespace creation non-interactive by querying the current participant's available machine types, choosing the smallest Linux machine, and passing both the machine and default-permissions flags explicitly.
+- Filter GitHub CLI informational billing lines from failures so the actual actionable error is reported instead of `Codespaces usage ... is paid for by ...`.
+- Detect an ended Live Share invitation, clear it only when the ready lease has not changed since the failed join, and immediately restart host election instead of repeatedly opening an inactive session.
+- Add regression coverage for machine selection, non-interactive creation arguments, and GitHub CLI error summarization.
+
 ## 0.22.5
 
 - Recover when `gh codespace code` exits successfully without opening a VS Code remote window. While the elected host lease remains in `starting`, the host launcher now reissues the idempotent open request every 20 seconds until the Codespace publishes Live Share readiness.
