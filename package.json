@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.22.0",
+    "version": "0.22.1",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -63,6 +63,9 @@
     "extensionPack": [
         "ms-vsliveshare.vsliveshare",
         "pomdtr.excalidraw-editor"
+    ],
+    "extensionDependencies": [
+        "ms-vsliveshare.vsliveshare"
     ],
     "main": "./out/src/extension",
     "contributes": {
@@ -822,7 +825,8 @@
         "require-from-string": "^2.0.2",
         "sanitize-html": "2.16.0",
         "unescape-js": "^1.1.4",
-        "vsc-leetcode-cli": "2.8.1"
+        "vsc-leetcode-cli": "2.8.1",
+        "vsls": "1.0.4753"
     },
     "overrides": {
         "vsc-leetcode-cli": {
