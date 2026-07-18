@@ -5,6 +5,7 @@ import * as assert from "assert";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { ActivationCommandGate } from "../src/activation/ActivationCommandGate";
 import * as showCommands from "../src/commands/show";
 import { LiveShareCodeLensController } from "../src/codelens/LiveShareCodeLensController";
 import {
@@ -29,6 +30,33 @@ import * as uiUtils from "../src/utils/uiUtils";
 import * as workspaceUtils from "../src/utils/workspaceUtils";
 
 const stagingFilePattern: RegExp = /\/\.vscode-leetcode-recreate-[a-f0-9]+\.tmp$/;
+
+async function testActivationCommandGate(): Promise<void> {
+    const gate: ActivationCommandGate = new ActivationCommandGate("Starting LeetCode test...");
+    const commandId: string = `leetcode.activationGateProbe.${process.pid}`;
+    let invocations: number = 0;
+    const registration: vscode.Disposable = vscode.commands.registerCommand(
+        commandId,
+        gate.wrap((value: string): string => {
+            invocations++;
+            return `done:${value}`;
+        }),
+    );
+    try {
+        const firstClick: Thenable<string | undefined> = vscode.commands.executeCommand<string>(commandId, "first");
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 50));
+        assert.strictEqual(invocations, 0, "The first click ran before activation completed.");
+
+        gate.succeed();
+        assert.strictEqual(await firstClick, "done:first");
+        assert.strictEqual(invocations, 1, "The deferred first click did not run exactly once.");
+
+        assert.strictEqual(await vscode.commands.executeCommand<string>(commandId, "second"), "done:second");
+        assert.strictEqual(invocations, 2, "A command invoked after activation should run immediately.");
+    } finally {
+        registration.dispose();
+    }
+}
 
 interface IPendingFile {
     content: Uint8Array;
@@ -544,6 +572,7 @@ class InMemoryFileSystemProvider implements vscode.FileSystemProvider {
 }
 
 export async function run(): Promise<void> {
+    await testActivationCommandGate();
     testWorkspaceFileDeletionTrackerRevisions();
     await testDetachedHintDoesNotHoldShowProblemTask();
 
