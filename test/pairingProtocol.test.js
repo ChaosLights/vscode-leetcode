@@ -21,6 +21,23 @@ const rendered = protocol.renderPairingIssueBody(state);
 assert.deepStrictEqual(protocol.parsePairingState(rendered), state);
 assert.strictEqual(protocol.isLeaseActive(state, now), true);
 assert.strictEqual(protocol.isLeaseActive(state, Date.parse("2026-07-18T03:22:00.000Z")), false);
+const startingState = {
+    ...state,
+    status: "starting",
+    joinUrl: null,
+};
+assert.strictEqual(protocol.canRetryCodespaceOpen(
+    startingState, 4, "ChaosLights", "effective-fishstick-g99rxrx9xrgfv9v5", now,
+), true);
+assert.strictEqual(protocol.canRetryCodespaceOpen(
+    startingState, 4, "another-user", "effective-fishstick-g99rxrx9xrgfv9v5", now,
+), false);
+assert.strictEqual(protocol.canRetryCodespaceOpen(
+    startingState, 4, "ChaosLights", "another-codespace", now,
+), false);
+assert.strictEqual(protocol.canRetryCodespaceOpen(
+    startingState, 4, "ChaosLights", "effective-fishstick-g99rxrx9xrgfv9v5", Date.parse("2026-07-18T03:22:00.000Z"),
+), false);
 
 const first = {
     version: 1,

@@ -16,6 +16,7 @@ import {
     IPairingCandidate,
     IPairingState,
     IPairingTarget,
+    canRetryCodespaceOpen,
     chooseElectionWinner,
     createIdleState,
     isAllowedLiveShareUrl,
@@ -27,6 +28,7 @@ import {
 const electionWindowMs: number = 3_000;
 const candidateLifetimeMs: number = 45_000;
 const pollIntervalMs: number = 3_000;
+const codespaceOpenRetryMs: number = 20_000;
 const startingLeaseMs: number = 15 * 60_000;
 const readyLeaseMs: number = 3 * 60_000;
 const heartbeatIntervalMs: number = 60_000;
@@ -213,7 +215,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             await this.ensureCodespaceAvailable(codespaceName, progress, token);
             progress.report({ message: "Opening the host Codespace..." });
             await this.github.openCodespace(codespaceName);
-            await this.waitForLease(target, generation, login, nonce, api, progress, token);
+            await this.waitForLease(target, generation, login, nonce, api, progress, token, codespaceName);
         } catch (error) {
             const failed: IPairingState = createIdleState(generation, this.safeStateError(error));
             await this.github.updateIssueState(target, failed).catch(() => undefined);
@@ -229,9 +231,12 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         api: ILiveShareApi,
         progress: vscode.Progress<{ message?: string }>,
         token: vscode.CancellationToken,
+        hostCodespaceName?: string,
     ): Promise<void> {
         const deadline: number = Date.now() + startingLeaseMs;
         const stateAdvanceDeadline: number = Date.now() + candidateLifetimeMs;
+        let nextCodespaceOpenAt: number = hostCodespaceName ? Date.now() + codespaceOpenRetryMs : Number.MAX_VALUE;
+        let openAttempt: number = 1;
         while (Date.now() < deadline) {
             this.throwIfCancelled(token);
             const state: IPairingState = await this.github.getIssueState(target);
@@ -244,6 +249,21 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             if (state.generation === generation && state.status === "ready" && isLeaseActive(state)) {
                 await this.followActiveLease(target, state, login, nonce, api, progress, token);
                 return;
+            }
+            const now: number = Date.now();
+            if (hostCodespaceName && now >= nextCodespaceOpenAt &&
+                canRetryCodespaceOpen(state, generation, login, hostCodespaceName, now)) {
+                openAttempt++;
+                progress.report({ message: `Codespace did not connect; reopening it (attempt ${openAttempt})...` });
+                leetCodeChannel.appendLine("[pairing] Codespace did not publish readiness; retrying its open request.");
+                try {
+                    await this.github.openCodespace(hostCodespaceName);
+                } catch (error) {
+                    leetCodeChannel.appendLine(`[pairing] Codespace reopen failed: ${this.errorMessage(error)}`);
+                }
+                nextCodespaceOpenAt = Date.now() + codespaceOpenRetryMs;
+                await this.wait(pollIntervalMs, token);
+                continue;
             }
             if (state.status === "starting" && state.hostLogin) {
                 progress.report({ message: `Waiting for ${state.hostLogin}'s Codespace and Live Share...` });
@@ -263,7 +283,12 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         token: vscode.CancellationToken,
     ): Promise<void> {
         if (state.status !== "ready") {
-            await this.waitForLease(_target, state.generation, login, nonce || "", api, progress, token);
+            const recoverCodespaceName: string | undefined = state.hostLogin === login && state.codespaceName
+                ? state.codespaceName
+                : undefined;
+            await this.waitForLease(
+                _target, state.generation, login, nonce || "", api, progress, token, recoverCodespaceName,
+            );
             return;
         }
         if (state.hostLogin === login && nonce && state.hostNonce === nonce) {
