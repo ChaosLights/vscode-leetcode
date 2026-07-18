@@ -6,6 +6,7 @@ import {
     IPairingCandidateComment,
     IPairingState,
     IPairingTarget,
+    parseCandidateComment,
     parsePairingState,
     renderPairingIssueBody,
 } from "./pairingProtocol";
@@ -17,7 +18,11 @@ interface IGitHubIssueResponse {
 interface IGitHubCommentResponse {
     id: number;
     created_at: string;
+    updated_at: string;
     body: string;
+    user: {
+        login: string;
+    } | null;
 }
 
 interface ICodespaceResponse {
@@ -101,8 +106,45 @@ export class GitHubCli {
         ]);
     }
 
-    public async postCandidate(target: IPairingTarget, body: string): Promise<IPairingCandidateComment> {
-        const response: IGitHubCommentResponse = this.parseJson<IGitHubCommentResponse>(
+    public async upsertCandidate(
+        target: IPairingTarget,
+        login: string,
+        body: string,
+    ): Promise<IPairingCandidateComment> {
+        const reusable: IPairingCandidateComment[] = (await this.listCandidates(target))
+            .filter((comment: IPairingCandidateComment) => {
+                const candidate = parseCandidateComment(comment.body);
+                return comment.authorLogin.toLowerCase() === login.toLowerCase() &&
+                    candidate?.login.toLowerCase() === login.toLowerCase();
+            })
+            .sort((left: IPairingCandidateComment, right: IPairingCandidateComment) => left.id - right.id);
+        if (reusable.length > 0) {
+            const canonical: IPairingCandidateComment = reusable[0];
+            const updatedResponse: IGitHubCommentResponse = this.parseJson<IGitHubCommentResponse>(
+                await this.run([
+                    "api",
+                    "--method", "PATCH",
+                    this.commentEndpoint(target, canonical.id),
+                    "-f", `body=${body}`,
+                ]),
+                "candidate comment",
+            );
+            await Promise.all(reusable.slice(1).map(async (duplicate: IPairingCandidateComment) => {
+                try {
+                    await this.run([
+                        "api",
+                        "--method", "DELETE",
+                        this.commentEndpoint(target, duplicate.id),
+                        "--silent",
+                    ]);
+                } catch (_error) {
+                    // Duplicate cleanup is cosmetic and must not interrupt host election.
+                }
+            }));
+            return this.toCandidateComment(updatedResponse);
+        }
+
+        const createdResponse: IGitHubCommentResponse = this.parseJson<IGitHubCommentResponse>(
             await this.run([
                 "api",
                 "--method", "POST",
@@ -111,7 +153,7 @@ export class GitHubCli {
             ]),
             "candidate comment",
         );
-        return this.toCandidateComment(response);
+        return this.toCandidateComment(createdResponse);
     }
 
     public async listCandidates(target: IPairingTarget): Promise<IPairingCandidateComment[]> {
@@ -215,6 +257,13 @@ export class GitHubCli {
         return `repos/${target.repository}/issues/${target.issueNumber}`;
     }
 
+    private commentEndpoint(target: IPairingTarget, commentId: number): string {
+        if (!Number.isSafeInteger(commentId) || commentId <= 0) {
+            throw new Error("Refusing to use an invalid issue comment ID.");
+        }
+        return `repos/${target.repository}/issues/comments/${commentId}`;
+    }
+
     private parseJson<T>(value: string, description: string): T {
         try {
             return JSON.parse(value) as T;
@@ -224,7 +273,12 @@ export class GitHubCli {
     }
 
     private toCandidateComment(comment: IGitHubCommentResponse): IPairingCandidateComment {
-        return { id: comment.id, createdAt: comment.created_at, body: comment.body };
+        return {
+            id: comment.id,
+            updatedAt: comment.updated_at || comment.created_at,
+            authorLogin: comment.user?.login || "",
+            body: comment.body,
+        };
     }
 
     private validateCodespaceName(name: string): void {

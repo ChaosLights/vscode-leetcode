@@ -194,7 +194,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             createdAt: new Date().toISOString(),
         };
         progress.report({ message: "Electing the first participant as host..." });
-        const ownComment = await this.github.postCandidate(target, renderCandidateComment(candidate));
+        const ownComment = await this.github.upsertCandidate(target, login, renderCandidateComment(candidate));
         pairingAuditLog.event("election.candidate_posted", {
             generation,
             login,

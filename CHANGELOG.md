@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.9
+
+- Reuse one machine-managed election comment per GitHub user by updating it for each generation instead of appending a hidden-only comment on every launcher run.
+- Elect from GitHub's server-side comment update time, validate that the comment author matches the candidate login, and retain deterministic comment-ID tie-breaking.
+- Add a visible explanation to coordination comments and remove the same user's older duplicate candidate comments without allowing cosmetic cleanup failures to interrupt pairing.
+
 ## 0.22.8
 
 - Write a persistent UTC JSONL pairing audit for every local extension host, covering election candidates and winners, lease state transitions, Codespace selection and connection, Live Share share/join results, heartbeats, stale-invite recovery, and errors without recording invitation URLs, cookies, tokens, or nonces.

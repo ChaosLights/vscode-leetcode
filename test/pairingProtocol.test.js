@@ -54,20 +54,40 @@ const second = {
     createdAt: "2026-07-18T03:19:59.000Z",
 };
 const comments = [
-    { id: 902, createdAt: second.createdAt, body: protocol.renderCandidateComment(second) },
-    { id: 901, createdAt: first.createdAt, body: protocol.renderCandidateComment(first) },
+    {
+        id: 902,
+        updatedAt: second.createdAt,
+        authorLogin: "second-user",
+        body: protocol.renderCandidateComment(second),
+    },
+    {
+        id: 901,
+        updatedAt: first.createdAt,
+        authorLogin: "first-user",
+        body: protocol.renderCandidateComment(first),
+    },
     {
         id: 1,
-        createdAt: "2026-07-18T03:00:00.000Z",
+        updatedAt: "2026-07-18T03:00:00.000Z",
+        authorLogin: "first-user",
         body: protocol.renderCandidateComment({ ...first, nonce: "33333333333333333333333333333333" }),
     },
-    { id: 3, createdAt: first.createdAt, body: "not a candidate" },
+    { id: 3, updatedAt: first.createdAt, authorLogin: "first-user", body: "not a candidate" },
+    {
+        id: 4,
+        updatedAt: first.createdAt,
+        authorLogin: "spoofed-user",
+        body: protocol.renderCandidateComment(first),
+    },
 ];
 const winner = protocol.chooseElectionWinner(comments, 5, now, 45_000);
 assert.ok(winner);
 assert.strictEqual(winner.commentId, 901);
 assert.strictEqual(winner.candidate.login, "first-user");
 assert.strictEqual(protocol.chooseElectionWinner(comments, 6, now, 45_000), undefined);
+assert.ok(protocol.renderCandidateComment(first).startsWith(
+    "LeetCode Pairing election record for `first-user`.",
+));
 
 assert.deepStrictEqual(protocol.validatePairingTarget({
     repository: "ChaosLights/lc",
