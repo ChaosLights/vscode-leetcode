@@ -32,7 +32,8 @@ export interface IPairingCandidate {
 
 export interface IPairingCandidateComment {
     id: number;
-    createdAt: string;
+    updatedAt: string;
+    authorLogin: string;
     body: string;
 }
 
@@ -119,7 +120,13 @@ export function renderPairingIssueBody(state: IPairingState): string {
 }
 
 export function renderCandidateComment(candidate: IPairingCandidate): string {
-    return `${candidateStart}\n${JSON.stringify(candidate)}\n${markerEnd}`;
+    return [
+        `LeetCode Pairing election record for \`${candidate.login}\`. This comment is reused automatically.`,
+        "",
+        candidateStart,
+        JSON.stringify(candidate),
+        markerEnd,
+    ].join("\n");
 }
 
 export function parseCandidateComment(body: string): IPairingCandidate | undefined {
@@ -140,16 +147,28 @@ export function chooseElectionWinner(
     return comments
         .map((comment: IPairingCandidateComment) => ({
             commentId: comment.id,
-            serverCreatedAt: Date.parse(comment.createdAt),
+            serverUpdatedAt: Date.parse(comment.updatedAt),
+            authorLogin: comment.authorLogin,
             candidate: parseCandidateComment(comment.body),
         }))
-        .filter((entry): entry is { commentId: number; serverCreatedAt: number; candidate: IPairingCandidate } => {
+        .filter((entry): entry is {
+            commentId: number;
+            serverUpdatedAt: number;
+            authorLogin: string;
+            candidate: IPairingCandidate;
+        } => {
             if (!entry.candidate || entry.candidate.generation !== generation || !Number.isSafeInteger(entry.commentId)) {
                 return false;
             }
-            return Number.isFinite(entry.serverCreatedAt) && entry.serverCreatedAt >= now - candidateLifetimeMs;
+            if (entry.candidate.login.toLowerCase() !== entry.authorLogin.toLowerCase()) {
+                return false;
+            }
+            return Number.isFinite(entry.serverUpdatedAt) && entry.serverUpdatedAt >= now - candidateLifetimeMs;
         })
-        .sort((left, right) => left.commentId - right.commentId)[0];
+        .sort((left, right) =>
+            left.serverUpdatedAt - right.serverUpdatedAt ||
+            left.commentId - right.commentId,
+        )[0];
 }
 
 export function isAllowedLiveShareUrl(value: string): boolean {

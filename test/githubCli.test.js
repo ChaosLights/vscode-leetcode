@@ -84,6 +84,99 @@ assert.strictEqual(
     assert.ok(calls[1].includes("--machine"));
     assert.ok(calls[1].includes("basicLinux32gb"));
     assert.ok(calls[1].includes("--default-permissions"));
+
+    const candidateTarget = {
+        repository: "ChaosLights/lc",
+        issueNumber: 8,
+        branch: "main",
+    };
+    const candidateBody = [
+        "LeetCode Pairing election record for `ChaosLights`.",
+        "<!-- leetcode-pairing-candidate",
+        JSON.stringify({
+            version: 1,
+            generation: 9,
+            login: "ChaosLights",
+            nonce: "0123456789abcdef0123456789abcdef",
+            createdAt: "2026-07-18T10:30:00.000Z",
+        }),
+        "-->",
+    ].join("\n");
+    const oldCandidate = candidateBody.replace('"generation":9', '"generation":8');
+    const upsertCalls = [];
+    const upsertCli = new githubCli.GitHubCli();
+    upsertCli.run = async (args) => {
+        upsertCalls.push(args);
+        if (args.includes("--paginate")) {
+            return JSON.stringify([[
+                {
+                    id: 101,
+                    created_at: "2026-07-18T08:00:00Z",
+                    updated_at: "2026-07-18T09:00:00Z",
+                    body: oldCandidate,
+                    user: { login: "ChaosLights" },
+                },
+                {
+                    id: 102,
+                    created_at: "2026-07-18T08:30:00Z",
+                    updated_at: "2026-07-18T09:30:00Z",
+                    body: oldCandidate,
+                    user: { login: "ChaosLights" },
+                },
+                {
+                    id: 103,
+                    created_at: "2026-07-18T08:45:00Z",
+                    updated_at: "2026-07-18T09:45:00Z",
+                    body: oldCandidate,
+                    user: { login: "another-user" },
+                },
+            ]]);
+        }
+        if (args.includes("PATCH")) {
+            return JSON.stringify({
+                id: 101,
+                created_at: "2026-07-18T08:00:00Z",
+                updated_at: "2026-07-18T10:30:01Z",
+                body: candidateBody,
+                user: { login: "ChaosLights" },
+            });
+        }
+        return "";
+    };
+    const updated = await upsertCli.upsertCandidate(candidateTarget, "ChaosLights", candidateBody);
+    assert.strictEqual(updated.id, 101);
+    assert.strictEqual(updated.updatedAt, "2026-07-18T10:30:01Z");
+    assert.strictEqual(updated.authorLogin, "ChaosLights");
+    assert.ok(upsertCalls.some((args) =>
+        args.includes("PATCH") && args.includes("repos/ChaosLights/lc/issues/comments/101"),
+    ));
+    assert.ok(upsertCalls.some((args) =>
+        args.includes("DELETE") && args.includes("repos/ChaosLights/lc/issues/comments/102"),
+    ));
+    assert.ok(!upsertCalls.some((args) =>
+        args.includes("DELETE") && args.includes("repos/ChaosLights/lc/issues/comments/103"),
+    ));
+
+    const createCalls = [];
+    const createCli = new githubCli.GitHubCli();
+    createCli.run = async (args) => {
+        createCalls.push(args);
+        if (args.includes("--paginate")) {
+            return JSON.stringify([[]]);
+        }
+        return JSON.stringify({
+            id: 201,
+            created_at: "2026-07-18T10:30:00Z",
+            updated_at: "2026-07-18T10:30:00Z",
+            body: candidateBody,
+            user: { login: "ChaosLights" },
+        });
+    };
+    const created = await createCli.upsertCandidate(candidateTarget, "ChaosLights", candidateBody);
+    assert.strictEqual(created.id, 201);
+    assert.ok(createCalls.some((args) =>
+        args.includes("POST") && args.includes("repos/ChaosLights/lc/issues/8/comments"),
+    ));
     console.log("githubCli tests passed");
 })().catch((error) => {
     console.error(error);
