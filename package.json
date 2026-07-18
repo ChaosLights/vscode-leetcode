@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.21.6",
+    "version": "0.22.0",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -40,7 +40,9 @@
     ],
     "preview": true,
     "activationEvents": [
+        "onUri",
         "onStartupFinished",
+        "onCommand:leetcode.startPairing",
         "onCommand:leetcode.toggleLeetCodeCn",
         "onCommand:leetcode.signin",
         "onCommand:leetcode.signout",
@@ -58,9 +60,19 @@
         "onCommand:leetcode.showEditorActions",
         "onView:leetCodeExplorer"
     ],
+    "extensionPack": [
+        "ms-vsliveshare.vsliveshare",
+        "pomdtr.excalidraw-editor"
+    ],
     "main": "./out/src/extension",
     "contributes": {
         "commands": [
+            {
+                "command": "leetcode.startPairing",
+                "title": "Start or Join Pairing Session",
+                "category": "LeetCode",
+                "icon": "$(live-share)"
+            },
             {
                 "command": "leetcode.deleteCache",
                 "title": "Delete Cache",
@@ -690,6 +702,32 @@
                         "scope": "application",
                         "description": "Show the LeetCode status bar or not."
                     },
+                    "leetcode.pairing.repository": {
+                        "type": "string",
+                        "default": "ChaosLights/lc",
+                        "scope": "window",
+                        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                        "description": "Private GitHub repository used to coordinate the first participant as the Live Share host."
+                    },
+                    "leetcode.pairing.issueNumber": {
+                        "type": "integer",
+                        "default": 8,
+                        "minimum": 1,
+                        "scope": "window",
+                        "description": "Machine-managed GitHub issue used for pairing leases and host election."
+                    },
+                    "leetcode.pairing.branch": {
+                        "type": "string",
+                        "default": "main",
+                        "scope": "window",
+                        "description": "Repository branch used when a participant must create a Codespace."
+                    },
+                    "leetcode.pairing.autoHost": {
+                        "type": "boolean",
+                        "default": true,
+                        "scope": "window",
+                        "description": "In this repository's Codespace, automatically fulfill a winning host lease by starting Live Share."
+                    },
                     "leetcode.editor.shortcuts": {
                         "type": "array",
                         "default": [
@@ -758,7 +796,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js",
+        "test": "npm run compile && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js && node ./test/pairingProtocol.test.js",
         "test:vscode": "npm run compile && node ./test/runVscodeIntegration.js",
         "build": "node ./scripts/package.js"
     },
