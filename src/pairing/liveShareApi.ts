@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 import * as vscode from "vscode";
-
-const extensionId: string = "ms-vsliveshare.vsliveshare";
-const apiVersion: string = "1.0.4753";
+import * as vsls from "vsls/vscode";
 
 export enum LiveShareRole {
     None = 0,
@@ -31,23 +29,10 @@ export interface ILiveShareApi {
     join(link: vscode.Uri, options?: { newWindow?: boolean }): Promise<void>;
 }
 
-interface ILiveShareExtensionExports {
-    getApi?: (requestedApiVersion: string, callingExtensionId?: string) => Promise<ILiveShareApi | null>;
-    getApiAsync?: (requestedApiVersion: string) => Promise<ILiveShareApi | null>;
-}
-
 export async function getLiveShareApi(): Promise<ILiveShareApi | null> {
-    const extension: vscode.Extension<ILiveShareExtensionExports> | undefined =
-        vscode.extensions.getExtension<ILiveShareExtensionExports>(extensionId);
-    if (!extension) {
-        return null;
-    }
-    const exports: ILiveShareExtensionExports = extension.isActive ? extension.exports : await extension.activate();
-    if (exports.getApi) {
-        return await exports.getApi(apiVersion, "LeetCode.vscode-leetcode");
-    }
-    if (exports.getApiAsync) {
-        return await exports.getApiAsync(apiVersion);
-    }
-    return null;
+    // Live Share discovers the calling extension from the official adapter's
+    // node_modules path. Calling its exported getApi() method directly from a
+    // deeply nested compiled file makes 1.1.122 look for package.json in the
+    // wrong directory and return null after activation.
+    return await vsls.getApi() as ILiveShareApi | null;
 }

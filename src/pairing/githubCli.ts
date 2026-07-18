@@ -20,6 +20,10 @@ interface IGitHubCommentResponse {
     body: string;
 }
 
+interface ICodespaceResponse {
+    state: string;
+}
+
 export interface ICodespaceSummary {
     name: string;
     state: string;
@@ -114,10 +118,27 @@ export class GitHubCli {
         return name;
     }
 
-    public async openCodespace(name: string): Promise<void> {
-        if (!/^[A-Za-z0-9-]{1,100}$/.test(name)) {
-            throw new Error("Refusing to open an invalid Codespace name.");
+    public async getCodespaceState(name: string): Promise<string> {
+        this.validateCodespaceName(name);
+        const response: ICodespaceResponse = this.parseJson<ICodespaceResponse>(
+            await this.run(["api", `user/codespaces/${name}`], 60_000),
+            "Codespace state",
+        );
+        if (typeof response.state !== "string" || !/^[A-Za-z]+$/.test(response.state)) {
+            throw new Error("GitHub CLI returned an invalid Codespace state.");
         }
+        return response.state;
+    }
+
+    public async startCodespace(name: string): Promise<void> {
+        this.validateCodespaceName(name);
+        await this.run([
+            "api", "--method", "POST", `user/codespaces/${name}/start`, "--silent",
+        ], 60_000);
+    }
+
+    public async openCodespace(name: string): Promise<void> {
+        this.validateCodespaceName(name);
         await this.run(["codespace", "code", "-c", name], 2 * 60_000);
     }
 
@@ -153,6 +174,12 @@ export class GitHubCli {
 
     private toCandidateComment(comment: IGitHubCommentResponse): IPairingCandidateComment {
         return { id: comment.id, createdAt: comment.created_at, body: comment.body };
+    }
+
+    private validateCodespaceName(name: string): void {
+        if (!/^[A-Za-z0-9-]{1,100}$/.test(name)) {
+            throw new Error("Refusing to use an invalid Codespace name.");
+        }
     }
 
     private safeError(value: string): string {

@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.22.1
+
+- Negotiate the Live Share 1.1.122 public API through Microsoft's official `vsls` adapter. Live Share identifies callers from the adapter's `node_modules` path; a direct call from this extension's nested compiled file activated Live Share but resolved `package.json` from the wrong directory and returned a null API before host election began.
+- Explicitly start a reusable `Shutdown` Codespace through GitHub's REST endpoint and wait until it reports `Available` before asking desktop VS Code to open it. `gh codespace code` can otherwise return successfully after only sending an open request, leaving an already-open disconnected window and the Codespace stopped.
+- Keep the Codespace auto-host monitor alive across the local blank-window phase created by `gh codespace code`; the extension can activate before VS Code changes the window to a remote Codespace, when `vscode.env.remoteName` is still unset.
+- Declare Live Share as a runtime extension dependency and report a precise host-placement error when an outdated Codespace setting runs Live Share remotely instead of beside the local LeetCode extension.
+- Cover the real launcher upgrade path: the pinned VSIX installs locally, Live Share and Excalidraw versions remain exact, and the pairing URI reaches the new extension host.
+
 ## 0.22.0
 
 - Add a local `LeetCode: Start or Join Pairing Session` flow backed by a private GitHub Issue. Simultaneous participants elect exactly one host from GitHub's monotonic comment IDs; the winner reuses or creates their own Codespace, while later participants wait and join automatically.

@@ -30,6 +30,7 @@ const pollIntervalMs: number = 3_000;
 const startingLeaseMs: number = 15 * 60_000;
 const readyLeaseMs: number = 3 * 60_000;
 const heartbeatIntervalMs: number = 60_000;
+const codespaceReadyTimeoutMs: number = 10 * 60_000;
 
 const retryElectionErrorName: string = "LeetCodePairingRetryElection";
 const pairingCancelledErrorName: string = "LeetCodePairingCancelled";
@@ -47,10 +48,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     private hostedNonce: string | undefined;
 
     public initializeAutoHost(): void {
-        if (vscode.env.remoteName !== "codespaces" || !this.isAutoHostEnabled()) {
-            return;
-        }
-        leetCodeChannel.appendLine("[pairing] Codespace auto-host monitor enabled.");
+        // `gh codespace code` first opens a local, empty window and only then
+        // changes that window to a Codespace workspace. At extension activation
+        // time remoteName can therefore still be undefined. Keep a lightweight
+        // monitor alive and let checkForHostRequest() decide when the window is
+        // actually attached to the elected Codespace.
         void this.checkForHostRequest();
         this.autoHostTimer = setInterval(() => void this.checkForHostRequest(), 15_000);
     }
@@ -208,6 +210,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             starting.leaseExpiresAt = new Date(Date.now() + startingLeaseMs).toISOString();
             await this.github.updateIssueState(target, starting);
 
+            await this.ensureCodespaceAvailable(codespaceName, progress, token);
             progress.report({ message: "Opening the host Codespace..." });
             await this.github.openCodespace(codespaceName);
             await this.waitForLease(target, generation, login, nonce, api, progress, token);
@@ -282,7 +285,7 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     private async checkForHostRequest(): Promise<void> {
-        if (this.autoHostBusy) {
+        if (this.autoHostBusy || !this.isAutoHostEnabled()) {
             return;
         }
         this.autoHostBusy = true;
@@ -413,11 +416,41 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     private async getOrCreateCodespace(target: IPairingTarget): Promise<string> {
         const codespaces: ICodespaceSummary[] = await this.github.listCodespaces(target.repository);
         const reusable: ICodespaceSummary | undefined = codespaces
-            .filter((entry: ICodespaceSummary) => ["Available", "Shutdown", "Starting"].includes(entry.state))
+            .filter((entry: ICodespaceSummary) => [
+                "Available", "Shutdown", "Starting", "Queued", "Provisioning", "Rebuilding",
+            ].includes(entry.state))
             .sort((left: ICodespaceSummary, right: ICodespaceSummary) =>
                 Date.parse(right.lastUsedAt) - Date.parse(left.lastUsedAt),
             )[0];
         return reusable ? reusable.name : await this.github.createCodespace(target);
+    }
+
+    private async ensureCodespaceAvailable(
+        name: string,
+        progress: vscode.Progress<{ message?: string }>,
+        token: vscode.CancellationToken,
+    ): Promise<void> {
+        const deadline: number = Date.now() + codespaceReadyTimeoutMs;
+        let startRequested: boolean = false;
+        while (Date.now() < deadline) {
+            this.throwIfCancelled(token);
+            const state: string = await this.github.getCodespaceState(name);
+            if (state === "Available") {
+                return;
+            }
+            if (["Deleted", "Failed", "Unavailable"].includes(state)) {
+                throw new Error(`Codespace ${name} cannot start (state: ${state}).`);
+            }
+            if (state === "Shutdown" && !startRequested) {
+                progress.report({ message: "Starting the host Codespace..." });
+                await this.github.startCodespace(name);
+                startRequested = true;
+            } else {
+                progress.report({ message: `Waiting for the host Codespace (${state})...` });
+            }
+            await this.wait(5_000, token);
+        }
+        throw new Error(`Codespace ${name} did not become available within 10 minutes.`);
     }
 
     private async requireLiveShareApi(): Promise<ILiveShareApi> {
@@ -425,7 +458,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             this.liveShareApi = await getLiveShareApi();
         }
         if (!this.liveShareApi) {
-            throw new Error("Live Share is unavailable locally. Install ms-vsliveshare.vsliveshare and reload VS Code.");
+            throw new Error(
+                "Live Share API is unavailable in this local extension host. Install Live Share locally, set " +
+                "remote.extensionKind for ms-vsliveshare.vsliveshare to [\"ui\"], and reload VS Code.",
+            );
         }
         return this.liveShareApi;
     }
