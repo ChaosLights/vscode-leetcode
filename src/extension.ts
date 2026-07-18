@@ -30,11 +30,13 @@ import { LiveShareCodeLensController } from "./codelens/LiveShareCodeLensControl
 import { workspaceFileDeletionTracker } from "./utils/workspaceFileDeletionTracker";
 import { ActivationCommandGate } from "./activation/ActivationCommandGate";
 import { LiveSharePairingCoordinator } from "./pairing/liveSharePairingCoordinator";
+import { pairingAuditLog } from "./pairing/pairingAuditLog";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
         return;
     }
+    pairingAuditLog.initialize(context);
     let codeLensController: LiveShareCodeLensController | undefined;
     const commandGate: ActivationCommandGate = new ActivationCommandGate();
     const pairingCoordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
@@ -45,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // activation instead of racing an as-yet-unregistered command.
     context.subscriptions.push(
         leetCodeChannel,
+        pairingAuditLog,
         leetCodeExecutor,
         pairingCoordinator,
         vscode.window.registerUriHandler({
