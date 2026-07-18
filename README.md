@@ -19,7 +19,7 @@
 - The Explorer includes a fixed, verified NeetCode 150 category.
 - `LeetCode: Start or Join Pairing Session` elects the first participant through a private GitHub Issue, opens that participant's Codespace as host, and automatically joins later participants through Live Share's public extension API. Short host leases recover after crashes without storing a LeetCode cookie or GitHub token in the Issue.
 
-Install the pinned VSIX from the [v0.22.3 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.3) in a local VS Code window, not in the Codespace extension host. The `ChaosLights/lc` repository includes a Windows launcher that bootstraps GitHub CLI and browser authentication, then pins this extension, Live Share, and Excalidraw before starting or joining the shared session.
+Install the pinned VSIX from the [v0.22.4 release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.4) in a local VS Code window, not in the Codespace extension host. The `ChaosLights/lc` repository includes a Windows launcher that bootstraps GitHub CLI and browser authentication, then pins this extension, Live Share, and Excalidraw before starting or joining the shared session.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/resources/LeetCode.png" alt="">

@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.4
+
+- Fix the first-time signed-out path in the Windows pairing launcher. GitHub CLI reports the expected “not logged in” probe on stderr; Windows PowerShell previously promoted it to a terminating `NativeCommandError` before the automatic browser login could start.
+- Treat native stderr as process output while checking explicit exit codes, and keep interactive GitHub device codes and browser authorization prompts visible.
+- Validate the fix with a regression test that simulates a completely signed-out GitHub CLI, completes a fake browser login, and reaches private-Issue preflight without any manual command.
+
 ## 0.22.3
 
 - Let the Windows pairing launcher bootstrap GitHub CLI automatically. It prefers `winget` and falls back to the official portable GitHub CLI release with SHA-256 verification, so a first-time participant does not need to install `gh` manually.
