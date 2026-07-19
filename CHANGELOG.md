@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.22.13
+
+- Remove the Excalidraw companion from the pairing flow entirely: drop it from the extension pack, delete the reproducible companion VSIX packaging, and stop pinning it in the launcher lock. Excalidraw is a web-only extension, and an earlier release pinned it to `remote.extensionKind: ["ui"]` in global settings, which excludes the web worker host it needs and prevented it from running at all (blank editor, `command 'excalidraw.*' not found`). Shared drawings are handled outside the editor now.
+- On startup, actively remove any stale `pomdtr.excalidraw-editor` entry from the global `remote.extensionKind` setting so machines affected by the earlier release self-heal.
+
 ## 0.22.12
 
 - Replace the cross-extension Excalidraw activation workaround with a reproducibly patched Excalidraw 3.9.3 companion VSIX that declares its custom-editor and command activation events. This works across the local Node and web extension-host boundary used by Codespaces and Live Share.

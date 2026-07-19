@@ -811,10 +811,24 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             "GitHub.codespaces": ["ui"],
             "ms-vsliveshare.vsliveshare": ["ui"],
         };
+        // Web-only extensions (e.g. Excalidraw) have no Node entry point and can
+        // only run in the web worker extension host. Pinning them to ["ui"]
+        // excludes that host, so the extension never activates: its commands
+        // report "not found" and its custom editor stays a blank webview. An
+        // earlier release wrote "pomdtr.excalidraw-editor": ["ui"] here; remove
+        // any such stale override so already-affected users self-heal. Never add
+        // a web-only extension to `required` above.
+        const staleWebExtensionOverrides: string[] = ["pomdtr.excalidraw-editor"];
         const merged: { [extensionId: string]: string[] } = { ...existing, ...required };
-        const changed: boolean = Object.keys(required).some((extensionId: string) =>
+        let changed: boolean = Object.keys(required).some((extensionId: string) =>
             JSON.stringify(existing[extensionId]) !== JSON.stringify(required[extensionId]),
         );
+        for (const extensionId of staleWebExtensionOverrides) {
+            if (Object.prototype.hasOwnProperty.call(merged, extensionId)) {
+                delete merged[extensionId];
+                changed = true;
+            }
+        }
         if (changed) {
             await configuration.update("extensionKind", merged, vscode.ConfigurationTarget.Global);
         }
