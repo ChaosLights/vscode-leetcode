@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.22.11
+
+- Explicitly activate the pinned Excalidraw companion in the local UI extension host so its custom editor and commands are available for Codespace and Live Share workspace files.
+
 ## 0.22.10
 
 - Confirm that Live Share actually reaches the Guest role after `join()` returns; the pinned Live Share API can resolve the command before asynchronously rejecting an inactive invitation.
