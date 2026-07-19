@@ -34,6 +34,34 @@ import { pairingAuditLog } from "./pairing/pairingAuditLog";
 
 let activePairingCoordinator: LiveSharePairingCoordinator | undefined;
 
+function activateCompanionExtension(extensionId: string, displayName: string): void {
+    const extension: vscode.Extension<unknown> | undefined = vscode.extensions.getExtension(extensionId);
+    if (!extension) {
+        leetCodeChannel.appendLine(
+            `[startup] Optional companion ${displayName} (${extensionId}) is not installed in the local UI extension host.`,
+        );
+        return;
+    }
+    if (extension.isActive) {
+        leetCodeChannel.appendLine(`[startup] Companion ${displayName} (${extensionId}) is already active.`);
+        return;
+    }
+
+    // Excalidraw 3.9.3 only declares a workspaceContains activation event.
+    // A local web/UI extension cannot discover files inside a Codespace or a
+    // Live Share virtual workspace through that event, so its custom editor
+    // and commands otherwise remain unregistered indefinitely.
+    void extension.activate().then(
+        () => leetCodeChannel.appendLine(`[startup] Activated companion ${displayName} (${extensionId}).`),
+        (error: unknown) => {
+            const message: string = error instanceof Error ? error.message : String(error);
+            leetCodeChannel.appendLine(
+                `[startup] Failed to activate companion ${displayName} (${extensionId}): ${message}`,
+            );
+        },
+    );
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (process.env.VSCODE_LEETCODE_TEST_MODE === "1") {
         return;
@@ -128,6 +156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             commandGate.wrap((uri?: vscode.Uri) => editorActionController.show(uri)),
         ),
     );
+    activateCompanionExtension("pomdtr.excalidraw-editor", "Excalidraw");
     pairingCoordinator.initializeAutoHost();
 
     try {
