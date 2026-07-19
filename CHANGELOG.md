@@ -1,8 +1,14 @@
 # Change Log
 
+## 0.22.12
+
+- Replace the cross-extension Excalidraw activation workaround with a reproducibly patched Excalidraw 3.9.3 companion VSIX that declares its custom-editor and command activation events. This works across the local Node and web extension-host boundary used by Codespaces and Live Share.
+- Declare every contributed LeetCode command as an explicit activation event so restored remote UI cannot encounter an unregistered command before `onStartupFinished`.
+- Reject malformed and unrelated problem-tree decoration URIs instead of returning empty decorations that VS Code 1.119 reports as extension errors.
+
 ## 0.22.11
 
-- Explicitly activate the pinned Excalidraw companion in the local UI extension host so its custom editor and commands are available for Codespace and Live Share workspace files.
+- Attempt to activate the pinned Excalidraw companion from the LeetCode extension host.
 
 ## 0.22.10
 

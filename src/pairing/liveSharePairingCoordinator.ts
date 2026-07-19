@@ -810,7 +810,6 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
             "LeetCode.vscode-leetcode": ["ui"],
             "GitHub.codespaces": ["ui"],
             "ms-vsliveshare.vsliveshare": ["ui"],
-            "pomdtr.excalidraw-editor": ["ui"],
         };
         const merged: { [extensionId: string]: string[] } = { ...existing, ...required };
         const changed: boolean = Object.keys(required).some((extensionId: string) =>

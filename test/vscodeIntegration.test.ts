@@ -14,6 +14,7 @@ import {
     ICodeLensDocumentMetadata,
 } from "../src/codelens/LiveShareSafeCodeLensProvider";
 import { LeetCodeNode } from "../src/explorer/LeetCodeNode";
+import { LeetCodeTreeItemDecorationProvider } from "../src/explorer/LeetCodeTreeItemDecorationProvider";
 import { leetCodeExecutor } from "../src/leetCodeExecutor";
 import { ILiveShareApi, LiveShareRole } from "../src/pairing/liveShareApi";
 import { LiveSharePairingCoordinator } from "../src/pairing/liveSharePairingCoordinator";
@@ -58,6 +59,46 @@ async function testActivationCommandGate(): Promise<void> {
         assert.strictEqual(invocations, 2, "A command invoked after activation should run immediately.");
     } finally {
         registration.dispose();
+    }
+}
+
+async function testProblemDecorationValidation(): Promise<void> {
+    const configuration: vscode.WorkspaceConfiguration =
+        vscode.workspace.getConfiguration("leetcode");
+    const previousGlobalValue: boolean | undefined =
+        configuration.inspect<boolean>("colorizeProblems")?.globalValue;
+    await configuration.update("colorizeProblems", true, vscode.ConfigurationTarget.Global);
+    const provider: LeetCodeTreeItemDecorationProvider =
+        new LeetCodeTreeItemDecorationProvider();
+    try {
+        assert.strictEqual(
+            provider.provideFileDecoration(vscode.Uri.parse("file://problems/example?difficulty=easy")),
+            undefined,
+        );
+        assert.strictEqual(
+            provider.provideFileDecoration(vscode.Uri.parse("leetcode://other/example?difficulty=easy")),
+            undefined,
+        );
+        assert.strictEqual(
+            provider.provideFileDecoration(vscode.Uri.parse("leetcode://problems/example")),
+            undefined,
+        );
+        assert.strictEqual(
+            provider.provideFileDecoration(vscode.Uri.parse("leetcode://problems/example?difficulty=unknown")),
+            undefined,
+        );
+        const decoration: vscode.FileDecoration | undefined =
+            provider.provideFileDecoration(
+                vscode.Uri.parse("leetcode://problems/example?difficulty=easy"),
+            ) as vscode.FileDecoration | undefined;
+        assert.ok(decoration);
+        assert.strictEqual(decoration.badge, "E");
+    } finally {
+        await configuration.update(
+            "colorizeProblems",
+            previousGlobalValue,
+            vscode.ConfigurationTarget.Global,
+        );
     }
 }
 
@@ -668,6 +709,7 @@ class InMemoryFileSystemProvider implements vscode.FileSystemProvider {
 
 export async function run(): Promise<void> {
     await testActivationCommandGate();
+    await testProblemDecorationValidation();
     await testPairingSessionLifecycle();
     testWorkspaceFileDeletionTrackerRevisions();
     await testDetachedHintDoesNotHoldShowProblemTask();

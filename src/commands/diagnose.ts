@@ -99,6 +99,8 @@ async function getInlayHintProviderDescription(
 }
 
 export async function diagnosePairing(context: vscode.ExtensionContext): Promise<void> {
+    const registeredCommands: readonly string[] = await vscode.commands.getCommands(true);
+    const registeredCommandSet: ReadonlySet<string> = new Set<string>(registeredCommands);
     const extensionKind: string = context.extension.extensionKind === vscode.ExtensionKind.UI ? "ui" : "workspace";
     const liveShareExtension: vscode.Extension<any> | undefined =
         vscode.extensions.getExtension(liveShareExtensionId);
@@ -145,6 +147,10 @@ export async function diagnosePairing(context: vscode.ExtensionContext): Promise
     leetCodeChannel.appendLine(
         `[diagnostics] liveShare=${liveShareExtension?.packageJSON.version || "not-installed"}, ` +
         `active=${liveShareExtension?.isActive || false}.`,
+    );
+    leetCodeChannel.appendLine(
+        `[diagnostics] excalidrawEditorCommand=${registeredCommandSet.has("excalidraw.showEditor")}, ` +
+        `excalidrawNewFileCommand=${registeredCommandSet.has("excalidraw.newFile")}.`,
     );
     leetCodeChannel.appendLine(
         `[diagnostics] activeDocument=${activeDocument?.uri.scheme || "none"}, ` +
