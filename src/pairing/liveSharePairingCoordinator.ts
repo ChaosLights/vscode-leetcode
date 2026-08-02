@@ -42,7 +42,7 @@ const pairingCancelledErrorName: string = "LeetCodePairingCancelled";
 const inactiveLiveShareSessionErrorName: string = "LeetCodePairingInactiveLiveShareSession";
 
 export class LiveSharePairingCoordinator implements vscode.Disposable {
-    private readonly github: GitHubCli = new GitHubCli();
+    private readonly github: GitHubCli;
     private activeStart: Thenable<void> | undefined;
     private autoHostTimer: NodeJS.Timeout | undefined;
     private heartbeatTimer: NodeJS.Timeout | undefined;
@@ -55,6 +55,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     private shutdownPromise: Promise<void> | undefined;
     private releaseHostLeasePromise: Promise<void> | undefined;
     private disposed: boolean = false;
+
+    public constructor(github: GitHubCli) {
+        this.github = github;
+    }
 
     public initializeAutoHost(): void {
         pairingAuditLog.event("auto_host.monitor_started", {
@@ -469,7 +473,10 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
     }
 
     private async checkForHostRequest(): Promise<void> {
-        if (this.disposed || this.autoHostBusy || !this.isAutoHostEnabled()) {
+        // Once this window owns a ready lease, the heartbeat is the sole state
+        // monitor. Running this 15-second discovery poll as well duplicated both
+        // the read and credential work for the same hosted session.
+        if (this.disposed || this.autoHostBusy || this.heartbeatTimer || !this.isAutoHostEnabled()) {
             return;
         }
         this.autoHostBusy = true;

@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.14
+
+- Replace recurring GitHub CLI subprocesses with authenticated GitHub REST requests for pairing Issue coordination and Codespace lifecycle operations. The extension reuses VS Code's GitHub session when available, otherwise reads and encrypts the launcher's CLI token once, eliminating the `gh.exe`/`conhost.exe` terminal flashes that occurred every 15–20 seconds on Windows.
+- Stop the 15-second auto-host discovery poll after a host heartbeat is active; the heartbeat remains the single lease monitor and avoids duplicate state reads.
+- Preserve automatic token refresh, non-interactive Codespace creation with default repository permissions, paginated candidate cleanup, redacted errors, and one-time GitHub CLI fallback coverage.
+
 ## 0.22.13
 
 - Remove the Excalidraw companion from the pairing flow entirely: drop it from the extension pack, delete the reproducible companion VSIX packaging, and stop pinning it in the launcher lock. Excalidraw is a web-only extension, and an earlier release pinned it to `remote.extensionKind: ["ui"]` in global settings, which excludes the web worker host it needs and prevented it from running at all (blank editor, `command 'excalidraw.*' not found`). Shared drawings are handled outside the editor now.

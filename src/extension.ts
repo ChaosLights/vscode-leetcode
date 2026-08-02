@@ -31,6 +31,8 @@ import { workspaceFileDeletionTracker } from "./utils/workspaceFileDeletionTrack
 import { ActivationCommandGate } from "./activation/ActivationCommandGate";
 import { LiveSharePairingCoordinator } from "./pairing/liveSharePairingCoordinator";
 import { pairingAuditLog } from "./pairing/pairingAuditLog";
+import { GitHubCli } from "./pairing/githubCli";
+import { createGitHubTokenProvider } from "./pairing/githubAuthentication";
 
 let activePairingCoordinator: LiveSharePairingCoordinator | undefined;
 
@@ -41,7 +43,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pairingAuditLog.initialize(context);
     let codeLensController: LiveShareCodeLensController | undefined;
     const commandGate: ActivationCommandGate = new ActivationCommandGate();
-    const pairingCoordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
+    const pairingCoordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator(
+        new GitHubCli(createGitHubTokenProvider(context.secrets)),
+    );
     activePairingCoordinator = pairingCoordinator;
 
     // Register every contributed command synchronously, before the first await.
