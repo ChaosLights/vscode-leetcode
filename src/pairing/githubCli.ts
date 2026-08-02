@@ -1,7 +1,7 @@
 // Copyright (c) ChaosLights. All rights reserved.
 // Licensed under the MIT license.
 
-import * as cp from "child_process";
+import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import {
     IPairingCandidateComment,
     IPairingState,
@@ -15,6 +15,10 @@ interface IGitHubIssueResponse {
     body: string | null;
 }
 
+interface IGitHubUserResponse {
+    login: string;
+}
+
 interface IGitHubCommentResponse {
     id: number;
     created_at: string;
@@ -26,7 +30,13 @@ interface IGitHubCommentResponse {
 }
 
 interface ICodespaceResponse {
+    name: string;
     state: string;
+    last_used_at?: string;
+}
+
+interface ICodespacesResponse {
+    codespaces: ICodespaceResponse[];
 }
 
 interface ICodespaceMachinesResponse {
@@ -48,6 +58,23 @@ export interface ICodespaceSummary {
     lastUsedAt: string;
 }
 
+export interface IGitHubHttpRequest {
+    method: "GET" | "POST" | "PATCH" | "DELETE";
+    endpoint: string;
+    token: string;
+    timeoutMs: number;
+    data?: unknown;
+    params?: { [name: string]: string | number };
+}
+
+export interface IGitHubHttpResponse {
+    status: number;
+    data: unknown;
+}
+
+export type GitHubTokenProvider = (forceRefresh: boolean) => Promise<string>;
+export type GitHubHttpRequester = (request: IGitHubHttpRequest) => Promise<IGitHubHttpResponse>;
+
 export function selectCodespaceMachine(machines: ICodespaceMachine[]): ICodespaceMachine | undefined {
     return machines
         .filter((machine: ICodespaceMachine) =>
@@ -65,45 +92,53 @@ export function selectCodespaceMachine(machines: ICodespaceMachine[]): ICodespac
         )[0];
 }
 
-export function summarizeGitHubCliError(stderr: string, fallback: string): string {
+export function summarizeGitHubError(detail: string, fallback: string): string {
     const statusLinePattern: RegExp = /^(?:[✓✔]\s*)?Codespaces usage for this repository is paid for by\b/i;
-    const stderrLines: string[] = stderr
+    const detailLines: string[] = detail
         .trim()
         .split(/\r?\n/)
         .map((line: string) => line.trim())
         .filter((line: string) => line.length > 0 && !statusLinePattern.test(line));
-    const detail: string = stderrLines.length > 0 ? stderrLines.join(" | ") : fallback.trim();
-    return (detail || "unknown error")
+    const summary: string = detailLines.length > 0 ? detailLines.join(" | ") : fallback.trim();
+    return (summary || "unknown error")
         .replace(/https:\/\/\S+/g, "[redacted URL]")
+        .replace(/(?:gh[oprsu]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "[redacted token]")
         .replace(/\s+/g, " ")
         .substring(0, 500);
 }
 
+// Retain the old export for callers and tests built against earlier releases.
+export const summarizeGitHubCliError: typeof summarizeGitHubError = summarizeGitHubError;
+
 export class GitHubCli {
+    private accessTokenPromise: Promise<string> | undefined;
+
+    public constructor(
+        private readonly tokenProvider: GitHubTokenProvider,
+        private readonly requester: GitHubHttpRequester = defaultGitHubHttpRequest,
+    ) { }
+
     public async getLogin(): Promise<string> {
-        const login: string = (await this.run(["api", "user", "--jq", ".login"])).trim();
+        const response: IGitHubUserResponse = await this.requestJson<IGitHubUserResponse>("GET", "user");
+        const login: string = response.login;
         if (!/^[A-Za-z0-9-]{1,100}$/.test(login)) {
-            throw new Error("GitHub CLI returned an invalid login. Run 'gh auth login' again.");
+            throw new Error("GitHub returned an invalid login. Sign into GitHub again.");
         }
         return login;
     }
 
     public async getIssueState(target: IPairingTarget): Promise<IPairingState> {
-        const response: IGitHubIssueResponse = this.parseJson<IGitHubIssueResponse>(
-            await this.run(["api", this.issueEndpoint(target)]),
-            "pairing issue",
+        const response: IGitHubIssueResponse = await this.requestJson<IGitHubIssueResponse>(
+            "GET",
+            this.issueEndpoint(target),
         );
         return parsePairingState(response.body);
     }
 
     public async updateIssueState(target: IPairingTarget, state: IPairingState): Promise<void> {
-        await this.run([
-            "api",
-            "--method", "PATCH",
-            this.issueEndpoint(target),
-            "-f", `body=${renderPairingIssueBody(state)}`,
-            "--silent",
-        ]);
+        await this.requestJson("PATCH", this.issueEndpoint(target), {
+            body: renderPairingIssueBody(state),
+        });
     }
 
     public async upsertCandidate(
@@ -120,23 +155,14 @@ export class GitHubCli {
             .sort((left: IPairingCandidateComment, right: IPairingCandidateComment) => left.id - right.id);
         if (reusable.length > 0) {
             const canonical: IPairingCandidateComment = reusable[0];
-            const updatedResponse: IGitHubCommentResponse = this.parseJson<IGitHubCommentResponse>(
-                await this.run([
-                    "api",
-                    "--method", "PATCH",
-                    this.commentEndpoint(target, canonical.id),
-                    "-f", `body=${body}`,
-                ]),
-                "candidate comment",
+            const updatedResponse: IGitHubCommentResponse = await this.requestJson<IGitHubCommentResponse>(
+                "PATCH",
+                this.commentEndpoint(target, canonical.id),
+                { body },
             );
             await Promise.all(reusable.slice(1).map(async (duplicate: IPairingCandidateComment) => {
                 try {
-                    await this.run([
-                        "api",
-                        "--method", "DELETE",
-                        this.commentEndpoint(target, duplicate.id),
-                        "--silent",
-                    ]);
+                    await this.requestJson("DELETE", this.commentEndpoint(target, duplicate.id));
                 } catch (_error) {
                     // Duplicate cleanup is cosmetic and must not interrupt host election.
                 }
@@ -144,54 +170,62 @@ export class GitHubCli {
             return this.toCandidateComment(updatedResponse);
         }
 
-        const createdResponse: IGitHubCommentResponse = this.parseJson<IGitHubCommentResponse>(
-            await this.run([
-                "api",
-                "--method", "POST",
-                `${this.issueEndpoint(target)}/comments`,
-                "-f", `body=${body}`,
-            ]),
-            "candidate comment",
+        const createdResponse: IGitHubCommentResponse = await this.requestJson<IGitHubCommentResponse>(
+            "POST",
+            `${this.issueEndpoint(target)}/comments`,
+            { body },
         );
         return this.toCandidateComment(createdResponse);
     }
 
     public async listCandidates(target: IPairingTarget): Promise<IPairingCandidateComment[]> {
-        const pages: IGitHubCommentResponse[][] = this.parseJson<IGitHubCommentResponse[][]>(
-            await this.run([
-                "api",
-                `${this.issueEndpoint(target)}/comments?per_page=100`,
-                "--paginate",
-                "--slurp",
-            ]),
-            "candidate comments",
-        );
-        return pages.reduce(
-            (all: IPairingCandidateComment[], page: IGitHubCommentResponse[]) =>
-                all.concat(page.map((comment: IGitHubCommentResponse) => this.toCandidateComment(comment))),
-            [],
-        );
+        const comments: IPairingCandidateComment[] = [];
+        for (let page: number = 1; page <= 100; page++) {
+            const response: IGitHubCommentResponse[] = await this.requestJson<IGitHubCommentResponse[]>(
+                "GET",
+                `${this.issueEndpoint(target)}/comments`,
+                undefined,
+                { per_page: 100, page },
+            );
+            comments.push(...response.map((comment: IGitHubCommentResponse) => this.toCandidateComment(comment)));
+            if (response.length < 100) {
+                return comments;
+            }
+        }
+        throw new Error("The pairing issue has too many comments to scan safely.");
     }
 
     public async listCodespaces(repository: string): Promise<ICodespaceSummary[]> {
-        const result: ICodespaceSummary[] = this.parseJson<ICodespaceSummary[]>(
-            await this.run([
-                "codespace", "list",
-                "-R", repository,
-                "--limit", "100",
-                "--json", "name,state,lastUsedAt",
-            ], 60_000),
-            "Codespaces list",
+        this.validateRepository(repository);
+        const response: ICodespacesResponse = await this.requestJson<ICodespacesResponse>(
+            "GET",
+            `repos/${repository}/codespaces`,
+            undefined,
+            { per_page: 100 },
+            60_000,
         );
-        return result.filter((entry: ICodespaceSummary) =>
-            typeof entry.name === "string" && typeof entry.state === "string" && typeof entry.lastUsedAt === "string",
-        );
+        if (!Array.isArray(response.codespaces)) {
+            throw new Error("GitHub returned an invalid Codespaces list.");
+        }
+        return response.codespaces
+            .filter((entry: ICodespaceResponse) =>
+                typeof entry.name === "string" && typeof entry.state === "string" &&
+                typeof entry.last_used_at === "string",
+            )
+            .map((entry: ICodespaceResponse) => ({
+                name: entry.name,
+                state: entry.state,
+                lastUsedAt: entry.last_used_at || "",
+            }));
     }
 
     public async createCodespace(target: IPairingTarget): Promise<string> {
-        const response: ICodespaceMachinesResponse = this.parseJson<ICodespaceMachinesResponse>(
-            await this.run(["api", `repos/${target.repository}/codespaces/machines`], 60_000),
-            "Codespace machines",
+        const response: ICodespaceMachinesResponse = await this.requestJson<ICodespaceMachinesResponse>(
+            "GET",
+            `repos/${target.repository}/codespaces/machines`,
+            undefined,
+            undefined,
+            60_000,
         );
         const machine: ICodespaceMachine | undefined = Array.isArray(response.machines)
             ? selectCodespaceMachine(response.machines)
@@ -199,58 +233,97 @@ export class GitHubCli {
         if (!machine) {
             throw new Error("GitHub did not return an available Linux Codespace machine for this account.");
         }
-        const output: string = await this.run([
-            "codespace", "create",
-            "-R", target.repository,
-            "-b", target.branch,
-            "--machine", machine.name,
-            "--default-permissions",
-            "--display-name", "LeetCode Pairing",
-            "--idle-timeout", "30m",
-            "--retention-period", "72h",
-        ], 5 * 60_000);
-        const name: string = output.trim().split(/\r?\n/).pop() || "";
+        const created: ICodespaceResponse = await this.requestJson<ICodespaceResponse>(
+            "POST",
+            `repos/${target.repository}/codespaces`,
+            {
+                ref: target.branch,
+                machine: machine.name,
+                display_name: "LeetCode Pairing",
+                idle_timeout_minutes: 30,
+                retention_period_minutes: 72 * 60,
+                // Match `gh codespace create --default-permissions`: continue
+                // non-interactively without granting extra repository access.
+                multi_repo_permissions_opt_out: true,
+            },
+            undefined,
+            5 * 60_000,
+        );
+        const name: string = created.name;
         if (!/^[A-Za-z0-9-]{1,100}$/.test(name)) {
-            throw new Error("GitHub CLI created a Codespace but did not return its name.");
+            throw new Error("GitHub created a Codespace but did not return its name.");
         }
         return name;
     }
 
     public async getCodespaceState(name: string): Promise<string> {
         this.validateCodespaceName(name);
-        const response: ICodespaceResponse = this.parseJson<ICodespaceResponse>(
-            await this.run(["api", `user/codespaces/${name}`], 60_000),
-            "Codespace state",
+        const response: ICodespaceResponse = await this.requestJson<ICodespaceResponse>(
+            "GET",
+            `user/codespaces/${name}`,
+            undefined,
+            undefined,
+            60_000,
         );
         if (typeof response.state !== "string" || !/^[A-Za-z]+$/.test(response.state)) {
-            throw new Error("GitHub CLI returned an invalid Codespace state.");
+            throw new Error("GitHub returned an invalid Codespace state.");
         }
         return response.state;
     }
 
     public async startCodespace(name: string): Promise<void> {
         this.validateCodespaceName(name);
-        await this.run([
-            "api", "--method", "POST", `user/codespaces/${name}/start`, "--silent",
-        ], 60_000);
+        await this.requestJson("POST", `user/codespaces/${name}/start`, undefined, undefined, 60_000);
     }
 
-    private async run(args: string[], timeoutMs: number = 30_000): Promise<string> {
-        return await new Promise<string>((resolve, reject) => {
-            cp.execFile("gh", args, {
-                windowsHide: true,
-                timeout: timeoutMs,
-                maxBuffer: 8 * 1024 * 1024,
-                encoding: "utf8",
-            }, (error: cp.ExecFileException | null, stdout: string, stderr: string) => {
-                if (!error) {
-                    resolve(stdout);
-                    return;
+    private async requestJson<T>(
+        method: IGitHubHttpRequest["method"],
+        endpoint: string,
+        data?: unknown,
+        params?: { [name: string]: string | number },
+        timeoutMs: number = 30_000,
+    ): Promise<T> {
+        for (let attempt: number = 0; attempt < 2; attempt++) {
+            const token: string = await this.getAccessToken(attempt > 0);
+            try {
+                const response: IGitHubHttpResponse = await this.requester({
+                    method,
+                    endpoint,
+                    token,
+                    timeoutMs,
+                    data,
+                    params,
+                });
+                return response.data as T;
+            } catch (error) {
+                const status: number | undefined = getHttpStatus(error);
+                if (status === 401 && attempt === 0) {
+                    this.accessTokenPromise = undefined;
+                    continue;
                 }
-                const detail: string = summarizeGitHubCliError(stderr, error.message);
-                reject(new Error(`GitHub CLI failed: ${detail}`));
+                throw new Error(`GitHub API failed: ${summarizeGitHubError(getHttpErrorMessage(error), "request failed")}`);
+            }
+        }
+        throw new Error("GitHub authentication failed after refreshing the access token.");
+    }
+
+    private async getAccessToken(forceRefresh: boolean): Promise<string> {
+        if (forceRefresh) {
+            this.accessTokenPromise = undefined;
+        }
+        if (!this.accessTokenPromise) {
+            this.accessTokenPromise = this.tokenProvider(forceRefresh).then((token: string) => {
+                const trimmed: string = token.trim();
+                if (!/^[^\s]{20,500}$/.test(trimmed)) {
+                    throw new Error("GitHub authentication returned an invalid access token.");
+                }
+                return trimmed;
+            }).catch((error: unknown) => {
+                this.accessTokenPromise = undefined;
+                throw error;
             });
-        });
+        }
+        return this.accessTokenPromise;
     }
 
     private issueEndpoint(target: IPairingTarget): string {
@@ -262,14 +335,6 @@ export class GitHubCli {
             throw new Error("Refusing to use an invalid issue comment ID.");
         }
         return `repos/${target.repository}/issues/comments/${commentId}`;
-    }
-
-    private parseJson<T>(value: string, description: string): T {
-        try {
-            return JSON.parse(value) as T;
-        } catch (_error) {
-            throw new Error(`GitHub CLI returned invalid JSON for ${description}.`);
-        }
     }
 
     private toCandidateComment(comment: IGitHubCommentResponse): IPairingCandidateComment {
@@ -287,4 +352,55 @@ export class GitHubCli {
         }
     }
 
+    private validateRepository(repository: string): void {
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+            throw new Error("Refusing to use an invalid GitHub repository.");
+        }
+    }
+}
+
+async function defaultGitHubHttpRequest(request: IGitHubHttpRequest): Promise<IGitHubHttpResponse> {
+    const config: AxiosRequestConfig = {
+        method: request.method,
+        url: `https://api.github.com/${request.endpoint}`,
+        headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${request.token}`,
+            "User-Agent": "vscode-leetcode-pairing",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        timeout: request.timeoutMs,
+        maxContentLength: 8 * 1024 * 1024,
+        maxBodyLength: 8 * 1024 * 1024,
+        data: request.data,
+        params: request.params,
+        validateStatus: (status: number) => status >= 200 && status < 300,
+    };
+    const response: AxiosResponse = await axios(config);
+    return { status: response.status, data: response.data };
+}
+
+function getHttpStatus(error: unknown): number | undefined {
+    if (axios.isAxiosError(error)) {
+        return error.response?.status;
+    }
+    if (typeof error === "object" && error !== null && "status" in error) {
+        const status: unknown = (error as { status?: unknown }).status;
+        return typeof status === "number" ? status : undefined;
+    }
+    return undefined;
+}
+
+function getHttpErrorMessage(error: unknown): string {
+    if (axios.isAxiosError(error)) {
+        const responseMessage: unknown = error.response?.data &&
+            typeof error.response.data === "object" && "message" in error.response.data
+            ? (error.response.data as { message?: unknown }).message
+            : undefined;
+        return typeof responseMessage === "string" ? responseMessage : error.message;
+    }
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return String(error);
 }

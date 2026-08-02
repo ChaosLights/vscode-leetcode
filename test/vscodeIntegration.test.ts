@@ -17,6 +17,7 @@ import { LeetCodeNode } from "../src/explorer/LeetCodeNode";
 import { LeetCodeTreeItemDecorationProvider } from "../src/explorer/LeetCodeTreeItemDecorationProvider";
 import { leetCodeExecutor } from "../src/leetCodeExecutor";
 import { ILiveShareApi, LiveShareRole } from "../src/pairing/liveShareApi";
+import { GitHubCli } from "../src/pairing/githubCli";
 import { LiveSharePairingCoordinator } from "../src/pairing/liveSharePairingCoordinator";
 import { IPairingState, IPairingTarget } from "../src/pairing/pairingProtocol";
 import { DescriptionConfiguration, IProblem, ProblemState } from "../src/shared";
@@ -262,7 +263,9 @@ async function testPairingSessionLifecycle(): Promise<void> {
         joinUrl: "https://prod.liveshare.vsengsaas.visualstudio.com/join?test",
         error: null,
     };
-    const coordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator();
+    const coordinator: LiveSharePairingCoordinator = new LiveSharePairingCoordinator(
+        new GitHubCli(async () => "test_token_012345678901234567890123456789"),
+    );
     const internals: {
         github: {
             getIssueState(pairingTarget: IPairingTarget): Promise<IPairingState>;
