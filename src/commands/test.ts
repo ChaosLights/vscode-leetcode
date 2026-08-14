@@ -11,6 +11,7 @@ import { prepareTestCaseArgument } from "../utils/testCaseUtils";
 import { DialogType, promptForOpenOutputChannel, showFileSelectDialog } from "../utils/uiUtils";
 import { getActiveSolutionFile, IActiveSolutionFile } from "../utils/workspaceUtils";
 import { leetCodeSubmissionProvider } from "../webview/leetCodeSubmissionProvider";
+import { runJudgeOperationWithSessionRecovery } from "./judgeSessionRecovery";
 
 export async function testSolution(uri?: vscode.Uri): Promise<void> {
     let solutionFile: IActiveSolutionFile | undefined;
@@ -60,7 +61,10 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
         let result: string | undefined;
         switch (choice.value) {
             case ":default":
-                result = await leetCodeExecutor.testSolution(solutionFile.filePath);
+                result = await runJudgeOperationWithSessionRecovery(
+                    "test",
+                    () => leetCodeExecutor.testSolution(solutionFile!.filePath),
+                );
                 break;
             case ":direct":
                 const testString: string | undefined = await vscode.window.showInputBox({
@@ -70,9 +74,12 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
                     ignoreFocusOut: true,
                 });
                 if (testString) {
-                    result = await leetCodeExecutor.testSolution(
-                        solutionFile.filePath,
-                        prepareTestCaseArgument(testString),
+                    result = await runJudgeOperationWithSessionRecovery(
+                        "test",
+                        () => leetCodeExecutor.testSolution(
+                            solutionFile!.filePath,
+                            prepareTestCaseArgument(testString),
+                        ),
                     );
                 }
                 break;
@@ -81,9 +88,12 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
                 if (testFile && testFile.length) {
                     const input: string = Buffer.from(await vscode.workspace.fs.readFile(testFile[0])).toString("utf8").trim();
                     if (input) {
-                        result = await leetCodeExecutor.testSolution(
-                            solutionFile.filePath,
-                            prepareTestCaseArgument(input),
+                        result = await runJudgeOperationWithSessionRecovery(
+                            "test",
+                            () => leetCodeExecutor.testSolution(
+                                solutionFile!.filePath,
+                                prepareTestCaseArgument(input),
+                            ),
                         );
                     } else {
                         vscode.window.showErrorMessage("The selected test file must not be empty.");

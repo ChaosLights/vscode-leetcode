@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.15
+
+- Recover automatically when LeetCode's read APIs accept a newly issued cookie before the judge backend does. Test and Submit now wait and retry only the explicit `session expired` response, rebuild the isolated CLI session once from the already verified cookie, and never ask the user to rotate the cookie repeatedly.
+- Capture the CLI's stderr phase markers so Submit is retried only when the judge rejected the initial POST. If a submission was already accepted and expiration happened while polling its result, the extension refuses to create a possible duplicate submission.
+- Keep ordinary compiler errors, wrong answers, timeouts, cancellations, and other failures on their original single-attempt path.
+
 ## 0.22.14
 
 - Replace recurring GitHub CLI subprocesses with authenticated GitHub REST requests for pairing Issue coordination and Codespace lifecycle operations. The extension reuses VS Code's GitHub session when available, otherwise reads and encrypts the launcher's CLI token once, eliminating the `gh.exe`/`conhost.exe` terminal flashes that occurred every 15–20 seconds on Windows.
