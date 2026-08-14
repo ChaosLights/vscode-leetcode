@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.22.16
+
+- Distinguish a Cloudflare managed HTML challenge from an expired LeetCode session. The legacy CLI previously mapped every HTTP 401/403 to `session expired`, causing pointless login rebuilds when a particular source-code payload triggered Cloudflare's WAF.
+- Surface an actionable error that confirms the login is still valid. For the reproduced Python false positive, rewriting `int(float(a)/b)` as the equivalent `int(a * 1.0 / b)` lets LeetCode accept the same Test request.
+- Apply and verify the CLI response-classification patch reproducibly during dependency installation and packaging, so clean Windows/Linux builds contain the fix.
+
 ## 0.22.15
 
 - Recover automatically when LeetCode's read APIs accept a newly issued cookie before the judge backend does. Test and Submit now wait and retry only the explicit `session expired` response, rebuild the isolated CLI session once from the already verified cookie, and never ask the user to rotate the cookie repeatedly.
