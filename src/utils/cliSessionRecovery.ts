@@ -16,6 +16,10 @@ export function isCliSessionExpiredError(error: any): boolean {
     return /(?:\[ERROR\]\s*)?session expired,?\s*please login again/i.test(getCliErrorOutput(error));
 }
 
+export function isCliCloudflareChallengeError(error: any): boolean {
+    return /Cloudflare security challenge blocked this code payload/i.test(getCliErrorOutput(error));
+}
+
 export function canSafelyRetryJudgeOperation(error: any, operationKind: JudgeOperationKind): boolean {
     if (!isCliSessionExpiredError(error)) {
         return false;

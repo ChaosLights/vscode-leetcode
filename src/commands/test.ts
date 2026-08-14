@@ -8,6 +8,7 @@ import { leetCodeManager } from "../leetCodeManager";
 import { IQuickItemEx, UserStatus } from "../shared";
 import { IOperationLease, solutionOperationLock } from "../utils/operationLock";
 import { prepareTestCaseArgument } from "../utils/testCaseUtils";
+import { isCliCloudflareChallengeError } from "../utils/cliSessionRecovery";
 import { DialogType, promptForOpenOutputChannel, showFileSelectDialog } from "../utils/uiUtils";
 import { getActiveSolutionFile, IActiveSolutionFile } from "../utils/workspaceUtils";
 import { leetCodeSubmissionProvider } from "../webview/leetCodeSubmissionProvider";
@@ -109,7 +110,12 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
         leetCodeSubmissionProvider.show(result);
     } catch (error) {
         leetCodeChannel.appendLine(`[Test] ${getErrorDetails(error)}`);
-        await promptForOpenOutputChannel("Failed to test the solution. Please open the output channel for details.", DialogType.error);
+        const message: string = isCliCloudflareChallengeError(error)
+            ? "Cloudflare blocked this code payload; your LeetCode login is still valid. " +
+                "Rewrite the flagged expression slightly and try again. For this Python division pattern, " +
+                "use int(a * 1.0 / b) instead of int(float(a)/b)."
+            : "Failed to test the solution. Please open the output channel for details.";
+        await promptForOpenOutputChannel(message, DialogType.error);
     } finally {
         if (solutionFile) {
             try {
