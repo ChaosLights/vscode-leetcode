@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.22.17
+
+- Release the per-file Test/Submit operation lock as soon as the CLI command and temporary-file cleanup finish. Error notifications no longer keep a completed operation marked as running until the user dismisses the notification.
+
 ## 0.22.16
 
 - Distinguish a Cloudflare managed HTML challenge from an expired LeetCode session. The legacy CLI previously mapped every HTTP 401/403 to `session expired`, causing pointless login rebuilds when a particular source-code payload triggered Cloudflare's WAF.

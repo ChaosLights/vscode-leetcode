@@ -45,7 +45,12 @@ export async function submitSolution(uri?: vscode.Uri): Promise<void> {
                 "Rewrite the flagged expression slightly and try again. For this Python division pattern, " +
                 "use int(a * 1.0 / b) instead of int(float(a)/b)."
             : "Failed to submit the solution. Please open the output channel for details.";
-        await promptForOpenOutputChannel(message, DialogType.error);
+        // Showing a notification is not part of the judge operation. Keeping this
+        // await here holds the per-file lease until the user dismisses the message,
+        // so a finished Submit/Test can incorrectly appear to still be running.
+        void promptForOpenOutputChannel(message, DialogType.error).catch((promptError: any) => {
+            leetCodeChannel.appendLine(`[Submit notification] ${getErrorDetails(promptError)}`);
+        });
         return;
     } finally {
         if (solutionFile) {
