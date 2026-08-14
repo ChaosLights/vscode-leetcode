@@ -115,7 +115,13 @@ export async function testSolution(uri?: vscode.Uri): Promise<void> {
                 "Rewrite the flagged expression slightly and try again. For this Python division pattern, " +
                 "use int(a * 1.0 / b) instead of int(float(a)/b)."
             : "Failed to test the solution. Please open the output channel for details.";
-        await promptForOpenOutputChannel(message, DialogType.error);
+        // Do not keep the per-file operation lease while the notification is open.
+        // VS Code resolves this promise only after the user dismisses the message or
+        // chooses an action, which previously made every retry look like a still-
+        // running Test operation even though the CLI process had already exited.
+        void promptForOpenOutputChannel(message, DialogType.error).catch((promptError: any) => {
+            leetCodeChannel.appendLine(`[Test notification] ${getErrorDetails(promptError)}`);
+        });
     } finally {
         if (solutionFile) {
             try {
