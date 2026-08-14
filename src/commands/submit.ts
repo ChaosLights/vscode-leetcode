@@ -10,6 +10,7 @@ import { DialogType, promptForOpenOutputChannel, promptForSignIn } from "../util
 import { getActiveSolutionFile, IActiveSolutionFile } from "../utils/workspaceUtils";
 import { IOperationLease, solutionOperationLock } from "../utils/operationLock";
 import { leetCodeSubmissionProvider } from "../webview/leetCodeSubmissionProvider";
+import { runJudgeOperationWithSessionRecovery } from "./judgeSessionRecovery";
 
 export async function submitSolution(uri?: vscode.Uri): Promise<void> {
     if (!leetCodeManager.getUser()) {
@@ -31,7 +32,10 @@ export async function submitSolution(uri?: vscode.Uri): Promise<void> {
         if (!solutionFile) {
             return;
         }
-        const result: string = await leetCodeExecutor.submitSolution(solutionFile.filePath);
+        const result: string = await runJudgeOperationWithSessionRecovery(
+            "submit",
+            () => leetCodeExecutor.submitSolution(solutionFile!.filePath),
+        );
         leetCodeSubmissionProvider.show(result);
     } catch (error) {
         leetCodeChannel.appendLine(`[Submit] ${getErrorDetails(error)}`);

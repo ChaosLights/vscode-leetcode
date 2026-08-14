@@ -5,8 +5,9 @@ import * as cp from "child_process";
 import * as vscode from "vscode";
 import { leetCodeChannel } from "../leetCodeChannel";
 
-interface IExecError extends Error {
+export interface IExecError extends Error {
     result?: string;
+    stderr?: string;
 }
 
 const maxCommandOutputBytes: number = 25 * 1024 * 1024;
@@ -20,6 +21,7 @@ export async function executeCommand(
 ): Promise<string> {
     return new Promise((resolve: (res: string) => void, reject: (e: Error) => void): void => {
         let result: string = "";
+        let stderr: string = "";
         let outputBytes: number = 0;
         let settled: boolean = false;
 
@@ -76,6 +78,7 @@ export async function executeCommand(
                 rejectOnce(new Error("LeetCode CLI output exceeded the 25 MB safety limit."));
                 return;
             }
+            stderr = stderr.concat(text);
             leetCodeChannel.append(text);
         });
 
@@ -89,6 +92,11 @@ export async function executeCommand(
                 const error: IExecError = new Error(`LeetCode CLI command failed with exit code "${code}".`);
                 if (result) {
                     error.result = result; // leetcode-cli may print useful content by exit with error code
+                }
+                if (stderr) {
+                    // Keep the CLI phase markers (for example, whether the judge already
+                    // accepted a submission) so callers can make a safe retry decision.
+                    error.stderr = stderr;
                 }
                 rejectOnce(error);
             } else {

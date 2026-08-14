@@ -10,6 +10,7 @@ import { ExtensionContext } from "vscode";
 import { Disposable, MessageItem, version as vscodeVersion, window, workspace, WorkspaceConfiguration } from "vscode";
 import { Endpoint, IProblem, supportedPlugins } from "./shared";
 import { executeCommand, executeCommandWithProgress, spawnCommand } from "./utils/cpUtils";
+import { isCliSessionExpiredError } from "./utils/cliSessionRecovery";
 import { DialogOptions, openUrl } from "./utils/uiUtils";
 import * as wsl from "./utils/wslUtils";
 
@@ -226,6 +227,9 @@ class LeetCodeExecutor implements Disposable {
         try {
             return await this.executeCommandWithProgressEx("Submitting to LeetCode...", [await this.getLeetCodeBinaryPath(), "submit", filePath]);
         } catch (error) {
+            if (isCliSessionExpiredError(error)) {
+                throw error;
+            }
             if (error.result) {
                 return error.result;
             }
