@@ -3,6 +3,26 @@ const os = require("os");
 const path = require("path");
 const { runTests } = require("@vscode/test-electron");
 
+async function removeTestRoot(testRoot) {
+    let lastError;
+    for (let attempt = 0; attempt < 40; attempt++) {
+        try {
+            fs.rmSync(testRoot, { recursive: true, force: true });
+            return;
+        } catch (error) {
+            if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(error.code)) {
+                throw error;
+            }
+            lastError = error;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+    }
+    // The integration result is authoritative. A delayed Electron handle on a
+    // disposable OS-temp profile must not convert a passing suite into a test
+    // failure; the next OS temp cleanup can remove the directory.
+    console.warn(`Unable to remove temporary VS Code profile '${testRoot}': ${lastError}`);
+}
+
 (async () => {
     const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-leetcode-integration-"));
     const workspacePath = path.join(testRoot, "workspace");
@@ -31,7 +51,7 @@ const { runTests } = require("@vscode/test-electron");
         }
         await runTests(options);
     } finally {
-        fs.rmSync(testRoot, { recursive: true, force: true });
+        await removeTestRoot(testRoot);
     }
 })().catch((error) => {
     console.error("VS Code integration tests failed", error);
