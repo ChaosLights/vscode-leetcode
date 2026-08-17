@@ -13,7 +13,11 @@
 
 6. Install the packaged VSIX into an isolated desktop VS Code profile and confirm the extension activates locally.
 7. With Live Share 1.1.122, open the same generated problem on a Codespaces host and guest. Confirm each window shows one inline-action strip, no `no commands` CodeLens, and that Test/Submit use different local accounts.
-8. Commit and push the source, tag the exact commit as `v<version>`, and create a GitHub Release containing the VSIX.
-9. Download the release asset again and verify its SHA256 value before updating any consuming repository.
+8. Commit and push the source, merge only after Windows/Linux CI passes, and build again from the clean merge commit.
+9. Prepare the consuming repository's final lock file and companion launcher ZIP before publishing. The ZIP must contain its fixed file set at the archive root, including the exact lock that names this VSIX and SHA256.
+10. Create an annotated `v<version>` tag on the verified merge commit, then create a draft GitHub Release and upload the final VSIX and launcher ZIP exactly once.
+11. Download both draft assets into a new directory and verify their SHA256 values and archive contents before publishing the draft.
+12. Treat every published tag and asset as immutable: never force a tag, use `--clobber`, delete an asset, or replace a same-version file. Publish the next patch version for every correction.
+13. Merge the consuming repository's lock update only after the public assets have been downloaded and verified, so its default branch never points at a missing release.
 
 The `publisher` and `name` fields intentionally remain `LeetCode.vscode-leetcode` because LeetCode's browser authorization callback targets that URI authority. The fork is distinguished by its higher version, display name, repository URL, release asset, and checksum.

@@ -17,7 +17,9 @@ export function isCliSessionExpiredError(error: any): boolean {
 }
 
 export function isCliCloudflareChallengeError(error: any): boolean {
-    return /Cloudflare security challenge blocked this code payload/i.test(getCliErrorOutput(error));
+    return /Cloudflare security challenge blocked (?:this LeetCode request|this code payload)/i.test(
+        getCliErrorOutput(error),
+    );
 }
 
 export function canSafelyRetryJudgeOperation(error: any, operationKind: JudgeOperationKind): boolean {

@@ -15,7 +15,8 @@ const cliPluginPath = path.resolve(
     "plugins",
     "leetcode.js",
 );
-const marker = "vscode-leetcode-cloudflare-classification";
+const marker = "vscode-leetcode-cloudflare-classification-v2";
+const legacyMarker = "vscode-leetcode-cloudflare-classification";
 let source = fs.readFileSync(cliPluginPath, "utf8");
 
 if (source.includes(marker)) {
@@ -36,7 +37,7 @@ const originalCheckError = `plugin.checkError = function(e, resp, expectedStatus
   return e;
 };`;
 
-const patchedCheckError = `plugin.checkError = function(e, resp, expectedStatus, body) {
+const legacyPatchedCheckError = `plugin.checkError = function(e, resp, expectedStatus, body) {
   if (!e && resp && resp.statusCode !== expectedStatus) {
     const code = resp.statusCode;
     log.debug('http error: ' + code);
@@ -69,6 +70,49 @@ const patchedCheckError = `plugin.checkError = function(e, resp, expectedStatus,
   return e;
 };`;
 
+const patchedCheckError = `plugin.checkError = function(e, resp, expectedStatus, body) {
+  if (!e && resp && resp.statusCode !== expectedStatus) {
+    const code = resp.statusCode;
+    log.debug('http error: ' + code);
+
+    // vscode-leetcode-cloudflare-classification-v2: Cloudflare can return a
+    // managed HTML challenge independently of the LeetCode cookie state. Keep
+    // it distinct from an explicit API authentication failure without guessing
+    // whether the trigger was source code, rate limiting, the network, or IP.
+    const contentType = String((resp.headers || {})['content-type'] || '');
+    const server = String((resp.headers || {}).server || '');
+    const responseText = typeof body === 'string' ? body : '';
+    const isCloudflareChallenge = code === 403 &&
+      (/cloudflare/i.test(server) || Boolean((resp.headers || {})['cf-ray'])) &&
+      /text\\/html/i.test(contentType) &&
+      (/<title>\\s*Just a moment/i.test(responseText) ||
+        /challenge-platform|Enable JavaScript and cookies/i.test(responseText));
+
+    if (isCloudflareChallenge) {
+      e = {
+        msg: 'Cloudflare security challenge blocked this LeetCode request. ' +
+          'This response does not prove that the login expired.',
+        statusCode: 403
+      };
+    } else if (code === 403 || code === 401) {
+      e = session.errors.EXPIRED;
+    } else {
+      e = {msg: 'http error', statusCode: code};
+    }
+  }
+  return e;
+};`;
+
+if (source.includes(legacyMarker)) {
+    if (!source.includes(legacyPatchedCheckError)) {
+        throw new Error("The existing Cloudflare patch changed; refusing an unsafe migration.");
+    }
+    source = source.replace(legacyPatchedCheckError, patchedCheckError);
+    fs.writeFileSync(cliPluginPath, source, "utf8");
+    console.log("Upgraded the vsc-leetcode-cli Cloudflare challenge classification.");
+    process.exit(0);
+}
+
 if (!source.includes(originalCheckError)) {
     throw new Error("The bundled vsc-leetcode-cli checkError implementation changed; refusing an unsafe patch.");
 }
@@ -82,4 +126,4 @@ if (callCount !== 11) {
 }
 source = source.split(originalCall).join(patchedCall);
 fs.writeFileSync(cliPluginPath, source, "utf8");
-console.log("Patched vsc-leetcode-cli Cloudflare challenge classification.");
+console.log("Patched vsc-leetcode-cli Cloudflare challenge classification v2.");

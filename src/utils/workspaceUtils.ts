@@ -14,6 +14,7 @@ import * as wsl from "./wslUtils";
 export interface IActiveSolutionFile {
     filePath: string;
     sourceUri: vscode.Uri;
+    sourceText: string;
     dispose(): Promise<void>;
 }
 
@@ -189,6 +190,7 @@ export async function getActiveSolutionFile(uri?: vscode.Uri): Promise<IActiveSo
     if (!document) {
         return undefined;
     }
+    const documentText: string = document.getText();
 
     if (document.uri.scheme === "file") {
         if (document.isDirty && !await document.save()) {
@@ -199,11 +201,11 @@ export async function getActiveSolutionFile(uri?: vscode.Uri): Promise<IActiveSo
         return {
             filePath: wsl.useWsl() ? await wsl.toWslPath(currentFilePath) : currentFilePath,
             sourceUri: document.uri,
+            sourceText: documentText,
             dispose: async (): Promise<void> => undefined,
         };
     }
 
-    const documentText: string = document.getText();
     if (Buffer.byteLength(documentText, "utf8") > 5 * 1024 * 1024) {
         throw new Error("The selected solution file exceeds the 5 MB safety limit.");
     }
@@ -216,6 +218,7 @@ export async function getActiveSolutionFile(uri?: vscode.Uri): Promise<IActiveSo
         return {
             filePath,
             sourceUri: document.uri,
+            sourceText: documentText,
             dispose: async (): Promise<void> => fse.remove(tempFolder),
         };
     } catch (error) {

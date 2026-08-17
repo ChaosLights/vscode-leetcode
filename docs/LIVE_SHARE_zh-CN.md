@@ -44,7 +44,7 @@ CLI HOME 隔离在该 VS Code Profile 的扩展 `globalStorage` 下；它不再�
 
 ## 安装
 
-1. 主机和所有来宾都使用桌面版 VS Code 1.100.0+ 和已验证的 Live Share 1.1.122，从 [v0.22.2 Release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.2) 下载并在各自桌面版 VS Code 本地安装同一个 `vscode-leetcode-live-share-0.22.2.vsix`，不要把它安装到 Codespace 容器。
+1. 主机和所有来宾都使用桌面版 VS Code 1.100.0+ 和已验证的 Live Share 1.1.122，从 [v0.22.18 Release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.18) 下载并在各自桌面版 VS Code 本地安装同一个 `vscode-leetcode-live-share-0.22.18.vsix`，不要把它安装到 Codespace 容器。
 2. 两端执行 `Developer: Reload Window`。
 3. 两端分别执行 `LeetCode: Sign In`，登录各自账号，并选择各自需要的 LeetCode endpoint。
 4. 主机开始可读写的 Live Share 会话，来宾打开主机分享的 LeetCode 题目文件。`@lc code=end` 下方空行的紧凑 `Submit · Test · Solution · Description` 是本地账号操作入口；两端应各自只看到一套，并且不应出现 `no commands`。若没有显示，请把 `editor.inlayHints.enabled` 设为 `"on"`，也可使用标题栏火箭或右键 `LeetCode` 菜单。来宾从 Explorer 创建题目时，由 Live Share 官方文件提供器按来宾权限写入 Codespace，不要求主持人逐次确认。

@@ -10,6 +10,7 @@ import { DialogType, promptForOpenOutputChannel, promptForSignIn } from "../util
 import { getActiveSolutionFile, IActiveSolutionFile } from "../utils/workspaceUtils";
 import { IOperationLease, solutionOperationLock } from "../utils/operationLock";
 import { isCliCloudflareChallengeError } from "../utils/cliSessionRecovery";
+import { getCloudflareChallengeMessage } from "../utils/cloudflareChallenge";
 import { leetCodeSubmissionProvider } from "../webview/leetCodeSubmissionProvider";
 import { runJudgeOperationWithSessionRecovery } from "./judgeSessionRecovery";
 
@@ -41,9 +42,7 @@ export async function submitSolution(uri?: vscode.Uri): Promise<void> {
     } catch (error) {
         leetCodeChannel.appendLine(`[Submit] ${getErrorDetails(error)}`);
         const message: string = isCliCloudflareChallengeError(error)
-            ? "Cloudflare blocked this code payload; your LeetCode login is still valid. " +
-                "Rewrite the flagged expression slightly and try again. For this Python division pattern, " +
-                "use int(a * 1.0 / b) instead of int(float(a)/b)."
+            ? getCloudflareChallengeMessage(solutionFile?.sourceText, solutionFile?.sourceUri.path)
             : "Failed to submit the solution. Please open the output channel for details.";
         // Showing a notification is not part of the judge operation. Keeping this
         // await here holds the per-file lease until the user dismisses the message,

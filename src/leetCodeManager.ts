@@ -11,6 +11,7 @@ import { leetCodeExecutor } from "./leetCodeExecutor";
 import { queryUserData } from "./request/query-user-data";
 import { Endpoint, IQuickItemEx, loginArgsMapping, urls, urlsCn, UserStatus } from "./shared";
 import { countCliProblems } from "./utils/cliSessionUtils";
+import { createSingleFlight } from "./utils/singleFlight";
 import {
     determineCliLoginOutputAction,
     didCliLoginSucceed,
@@ -24,6 +25,9 @@ import { DialogType, openUrl, promptForOpenOutputChannel } from "./utils/uiUtils
 class LeetCodeManager extends EventEmitter {
     private currentUser: string | undefined;
     private pendingWebAuthorizationUntil: number = 0;
+    private readonly repairCliLoginSingleFlight: () => Promise<boolean> = createSingleFlight(
+        () => this.repairCliLoginCore(),
+    );
     private userStatus: UserStatus;
 
     constructor() {
@@ -265,7 +269,11 @@ class LeetCodeManager extends EventEmitter {
         });
     }
 
-    public async repairCliLogin(): Promise<boolean> {
+    public repairCliLogin(): Promise<boolean> {
+        return this.repairCliLoginSingleFlight();
+    }
+
+    private async repairCliLoginCore(): Promise<boolean> {
         const cookie: string | undefined = globalState.getCookie();
         if (!cookie) {
             return false;

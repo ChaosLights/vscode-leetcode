@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.22.17",
+    "version": "0.22.18",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -799,7 +799,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "test": "npm run compile && node ./test/packageManifest.test.js && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js && node ./test/cliPatch.test.js && node ./test/cliSessionRecovery.test.js && node ./test/pairingProtocol.test.js && node ./test/githubCli.test.js",
+        "test": "npm run compile && node ./test/packageManifest.test.js && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js && node ./test/cliPatch.test.js && node ./test/cliSessionRecovery.test.js && node ./test/singleFlight.test.js && node ./test/cloudflareChallenge.test.js && node ./test/pairingProtocol.test.js && node ./test/githubCli.test.js",
         "test:vscode": "npm run compile && node ./test/runVscodeIntegration.js",
         "build": "node ./scripts/package.js",
         "patch:cli": "node ./scripts/patch-vsc-leetcode-cli.js",
@@ -851,9 +851,12 @@
         },
         "tslint": {
             "diff": "4.0.4",
-            "js-yaml": "3.15.0",
+            "js-yaml": "3.15.1",
             "semver": "5.7.2"
         },
+        "nanoid": "3.3.18",
+        "postcss": "8.5.26",
+        "undici": "6.28.0",
         "brace-expansion": "1.1.18",
         "minimatch": "3.1.4"
     }

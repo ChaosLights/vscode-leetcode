@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.18
+
+- Coalesce every concurrent CLI session rebuild into one shared operation. Test, Submit, problem-list recovery, and operations on different files can no longer race while replacing the same local CLI login and cache files; a completed or failed rebuild is cleared so a later attempt can retry normally.
+- Classify Cloudflare managed HTML challenges without claiming that the cookie is valid or that source code was necessarily the trigger. The user-facing Python rewrite hint now appears only for a `.py` solution that actually contains the reproduced `int(float(...)/...)` pattern.
+- Preserve recognition of the v0.22.16 Cloudflare error text while reproducibly migrating already-patched dependencies to the neutral v2 classifier during compile and packaging.
+- Pin patched transitive releases for `js-yaml`, `nanoid`, `postcss`, and `undici`, clearing all high/critical dependency advisories while retaining the legacy CLI's documented, unfixable moderate `request` advisories.
+
 ## 0.22.17
 
 - Release the per-file Test/Submit operation lock as soon as the CLI command and temporary-file cleanup finish. Error notifications no longer keep a completed operation marked as running until the user dismisses the notification.

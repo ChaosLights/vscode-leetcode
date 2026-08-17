@@ -17,10 +17,12 @@ function expiredError(stderr = "- Sending code to judge\n") {
     assert.strictEqual(isCliSessionExpiredError(expiredError()), true);
     assert.strictEqual(isCliSessionExpiredError(new Error("compile failed")), false);
     const cloudflareError = new Error("CLI failed");
-    cloudflareError.result = "[ERROR] Cloudflare security challenge blocked this code payload [code=403]";
+    cloudflareError.result = "[ERROR] Cloudflare security challenge blocked this LeetCode request [code=403]";
     assert.strictEqual(isCliCloudflareChallengeError(cloudflareError), true);
     assert.strictEqual(isCliSessionExpiredError(cloudflareError), false);
     assert.strictEqual(canSafelyRetryJudgeOperation(cloudflareError, "test"), false);
+    const legacyCloudflareError = new Error("Cloudflare security challenge blocked this code payload");
+    assert.strictEqual(isCliCloudflareChallengeError(legacyCloudflareError), true);
     assert.strictEqual(canSafelyRetryJudgeOperation(expiredError(), "test"), true);
     assert.strictEqual(canSafelyRetryJudgeOperation(expiredError(), "submit"), true);
     assert.strictEqual(
