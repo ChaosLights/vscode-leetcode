@@ -4,7 +4,8 @@
 import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { leetCodeChannel } from "../leetCodeChannel";
-import { GitHubCli, ICodespaceSummary } from "./githubCli";
+import { ICodespaceSummary, selectReusableCodespace, waitForCodespaceAvailable } from "./codespaceLifecycle";
+import { GitHubCli } from "./githubCli";
 import {
     getLiveShareApi,
     ILiveShareApi,
@@ -714,13 +715,11 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
 
     private async getOrCreateCodespace(target: IPairingTarget): Promise<string> {
         const codespaces: ICodespaceSummary[] = await this.github.listCodespaces(target.repository);
-        const reusable: ICodespaceSummary | undefined = codespaces
-            .filter((entry: ICodespaceSummary) => [
-                "Available", "Shutdown", "Starting", "Queued", "Provisioning", "Rebuilding",
-            ].includes(entry.state))
-            .sort((left: ICodespaceSummary, right: ICodespaceSummary) =>
-                Date.parse(right.lastUsedAt) - Date.parse(left.lastUsedAt),
-            )[0];
+        // Reuse every Codespace GitHub still holds, including transitional
+        // states such as ShuttingDown after an idle stop. Creating a
+        // replacement here would open an empty checkout of the branch and
+        // make the previous session's uncommitted work look lost.
+        const reusable: ICodespaceSummary | undefined = selectReusableCodespace(codespaces);
         if (reusable) {
             pairingAuditLog.event("codespace.reused", {
                 codespaceName: reusable.name,
@@ -739,28 +738,15 @@ export class LiveSharePairingCoordinator implements vscode.Disposable {
         progress: vscode.Progress<{ message?: string }>,
         token: vscode.CancellationToken,
     ): Promise<void> {
-        const deadline: number = Date.now() + codespaceReadyTimeoutMs;
-        let startRequested: boolean = false;
-        while (Date.now() < deadline) {
-            this.throwIfCancelled(token);
-            const state: string = await this.github.getCodespaceState(name);
-            pairingAuditLog.event("codespace.state_read", { codespaceName: name, state });
-            if (state === "Available") {
-                return;
-            }
-            if (["Deleted", "Failed", "Unavailable"].includes(state)) {
-                throw new Error(`Codespace ${name} cannot start (state: ${state}).`);
-            }
-            if (state === "Shutdown" && !startRequested) {
-                progress.report({ message: "Starting the host Codespace..." });
-                await this.github.startCodespace(name);
-                startRequested = true;
-            } else {
-                progress.report({ message: `Waiting for the host Codespace (${state})...` });
-            }
-            await this.wait(5_000, token);
-        }
-        throw new Error(`Codespace ${name} did not become available within 10 minutes.`);
+        await waitForCodespaceAvailable(name, {
+            getState: () => this.github.getCodespaceState(name),
+            start: () => this.github.startCodespace(name),
+            wait: (ms: number) => this.wait(ms, token),
+            throwIfCancelled: () => this.throwIfCancelled(token),
+            now: () => Date.now(),
+            onState: (state: string) => pairingAuditLog.event("codespace.state_read", { codespaceName: name, state }),
+            report: (message: string) => progress.report({ message }),
+        }, codespaceReadyTimeoutMs);
     }
 
     private async openCodespace(

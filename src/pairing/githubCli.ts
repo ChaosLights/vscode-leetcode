@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
+import { ICodespaceSummary } from "./codespaceLifecycle";
 import {
     IPairingCandidateComment,
     IPairingState,
@@ -32,7 +33,7 @@ interface IGitHubCommentResponse {
 interface ICodespaceResponse {
     name: string;
     state: string;
-    last_used_at?: string;
+    last_used_at?: string | null;
 }
 
 interface ICodespacesResponse {
@@ -50,12 +51,6 @@ export interface ICodespaceMachine {
     cpus: number;
     memory_in_bytes: number;
     storage_in_bytes: number;
-}
-
-export interface ICodespaceSummary {
-    name: string;
-    state: string;
-    lastUsedAt: string;
 }
 
 export interface IGitHubHttpRequest {
@@ -209,13 +204,15 @@ export class GitHubCli {
         }
         return response.codespaces
             .filter((entry: ICodespaceResponse) =>
-                typeof entry.name === "string" && typeof entry.state === "string" &&
-                typeof entry.last_used_at === "string",
+                // Keep entries without a usable last_used_at: dropping an
+                // existing Codespace would let the coordinator create an
+                // empty replacement and hide its uncommitted work.
+                typeof entry.name === "string" && typeof entry.state === "string",
             )
             .map((entry: ICodespaceResponse) => ({
                 name: entry.name,
                 state: entry.state,
-                lastUsedAt: entry.last_used_at || "",
+                lastUsedAt: typeof entry.last_used_at === "string" ? entry.last_used_at : "",
             }));
     }
 

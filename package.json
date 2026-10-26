@@ -2,7 +2,7 @@
     "name": "vscode-leetcode",
     "displayName": "LeetCode Live Share",
     "description": "Solve LeetCode problems with isolated local accounts in Remote and Live Share workspaces",
-    "version": "0.22.18",
+    "version": "0.22.19",
     "author": "ChaosLights",
     "publisher": "LeetCode",
     "license": "MIT",
@@ -799,7 +799,7 @@
         "compile": "node ./node_modules/typescript/bin/tsc -p ./",
         "watch": "node ./node_modules/typescript/bin/tsc -watch -p ./",
         "lint": "node ./node_modules/tslint/bin/tslint --project tsconfig.json -e src/*.d.ts -t verbose",
-        "test": "npm run compile && node ./test/packageManifest.test.js && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js && node ./test/cliPatch.test.js && node ./test/cliSessionRecovery.test.js && node ./test/singleFlight.test.js && node ./test/cloudflareChallenge.test.js && node ./test/pairingProtocol.test.js && node ./test/githubCli.test.js",
+        "test": "npm run compile && node ./test/packageManifest.test.js && node ./test/workspacePathUtils.test.js && node ./test/remoteFileWriteCore.test.js && node ./test/cliProcess.test.js && node ./test/cliPatch.test.js && node ./test/cliSessionRecovery.test.js && node ./test/singleFlight.test.js && node ./test/cloudflareChallenge.test.js && node ./test/pairingProtocol.test.js && node ./test/githubCli.test.js && node ./test/codespaceLifecycle.test.js",
         "test:vscode": "npm run compile && node ./test/runVscodeIntegration.js",
         "build": "node ./scripts/package.js",
         "patch:cli": "node ./scripts/patch-vsc-leetcode-cli.js",
@@ -820,13 +820,13 @@
         "typescript": "^5.9.3"
     },
     "dependencies": {
-        "axios": "^1.18.1",
+        "axios": "^1.20.0",
         "fs-extra": "^10.1.0",
         "highlight.js": "^10.7.3",
         "lodash": "^4.18.1",
-        "markdown-it": "^14.3.0",
+        "markdown-it": "^14.3.3",
         "require-from-string": "^2.0.2",
-        "sanitize-html": "2.17.6",
+        "sanitize-html": "2.18.1",
         "unescape-js": "^1.1.4",
         "vsc-leetcode-cli": "2.8.1",
         "vsls": "1.0.4753"
@@ -834,11 +834,11 @@
     "overrides": {
         "vsc-leetcode-cli": {
             "cheerio": "1.0.0",
-            "moment": "2.30.1",
+            "moment": "2.31.0",
             "request": {
                 ".": "2.88.2",
                 "form-data": "2.5.6",
-                "qs": "6.15.3",
+                "qs": "6.16.1",
                 "tough-cookie": "4.1.4"
             },
             "underscore": "1.13.8"
@@ -851,13 +851,13 @@
         },
         "tslint": {
             "diff": "4.0.4",
-            "js-yaml": "3.15.1",
+            "js-yaml": "3.15.2",
             "semver": "5.7.2"
         },
         "nanoid": "3.3.18",
         "postcss": "8.5.26",
-        "undici": "6.28.0",
-        "brace-expansion": "1.1.18",
-        "minimatch": "3.1.4"
+        "undici": "6.29.1",
+        "brace-expansion": "1.1.21",
+        "minimatch": "3.1.5"
     }
 }

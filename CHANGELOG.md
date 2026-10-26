@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.22.19
+
+- Never hide a previous session's work behind a fresh Codespace. When the host reran the launcher while GitHub was still stopping an idle Codespace (`ShuttingDown`), the old reuse allow-list skipped it and created an empty Codespace from `main`, so uncommitted solutions and notes looked lost. The coordinator now reuses the most recently used Codespace in every state except `Deleted`, waits for `ShuttingDown` to finish, and then starts it as before.
+- Fail with an actionable error instead of creating a replacement when the selected Codespace is `Failed`, `Unavailable`, or `Archived`, so recoverable work is never shadowed automatically. Timeouts now state that no replacement was created.
+- Keep Codespaces whose `last_used_at` is missing visible to reuse selection; they sort after dated entries instead of being dropped.
+- Clear newly published high-severity advisories with patch-level updates: `axios` 1.20.0 (`follow-redirects` 1.16.2), `markdown-it` 14.3.3, `sanitize-html` 2.18.1 (`source-map-js` 1.2.2), and pinned `undici` 6.29.1, `js-yaml` 3.15.2, `brace-expansion` 1.1.21, `minimatch` 3.1.5, `moment` 2.31.0, and `qs` 6.16.1. The remaining moderate advisories are the legacy CLI's unfixable `request` SSRF and the `uuid` 3.x buffer check, which only affects v3/v5/v6 with a caller-supplied buffer; `request` calls v4 and cannot load the fixed `uuid` 11 API.
+
 ## 0.22.18
 
 - Coalesce every concurrent CLI session rebuild into one shared operation. Test, Submit, problem-list recovery, and operations on different files can no longer race while replacing the same local CLI login and cache files; a completed or failed rebuild is cleared so a later attempt can retry normally.

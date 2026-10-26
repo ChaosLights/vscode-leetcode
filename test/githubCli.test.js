@@ -121,6 +121,34 @@ const accessToken = "github_pat_012345678901234567890123456789";
     assert.strictEqual(createRequests[1].data.multi_repo_permissions_opt_out, true);
     assert.strictEqual(createRequests[1].data.retention_period_minutes, 4320);
 
+    const listRequests = [];
+    const listCli = new githubCli.GitHubCli(
+        async () => accessToken,
+        async (request) => {
+            listRequests.push(request);
+            return {
+                status: 200,
+                data: {
+                    total_count: 4,
+                    codespaces: [
+                        { name: "stopping", state: "ShuttingDown", last_used_at: "2026-10-26T04:35:39Z" },
+                        { name: "never-used", state: "Provisioning", last_used_at: null },
+                        { name: "missing-timestamp", state: "Shutdown" },
+                        { name: 42, state: "Available", last_used_at: "2026-10-26T04:35:39Z" },
+                    ],
+                },
+            };
+        },
+    );
+    const listed = await listCli.listCodespaces("ChaosLights/lc");
+    assert.strictEqual(listRequests[0].method, "GET");
+    assert.strictEqual(listRequests[0].endpoint, "repos/ChaosLights/lc/codespaces");
+    assert.deepStrictEqual(listed, [
+        { name: "stopping", state: "ShuttingDown", lastUsedAt: "2026-10-26T04:35:39Z" },
+        { name: "never-used", state: "Provisioning", lastUsedAt: "" },
+        { name: "missing-timestamp", state: "Shutdown", lastUsedAt: "" },
+    ], "existing Codespaces without last_used_at must stay visible to reuse selection");
+
     const upsertRequests = [];
     const upsertCli = new githubCli.GitHubCli(
         async () => accessToken,

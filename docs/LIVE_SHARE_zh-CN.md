@@ -44,7 +44,7 @@ CLI HOME 隔离在该 VS Code Profile 的扩展 `globalStorage` 下；它不再�
 
 ## 安装
 
-1. 主机和所有来宾都使用桌面版 VS Code 1.100.0+ 和已验证的 Live Share 1.1.122，从 [v0.22.18 Release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.18) 下载并在各自桌面版 VS Code 本地安装同一个 `vscode-leetcode-live-share-0.22.18.vsix`，不要把它安装到 Codespace 容器。
+1. 主机和所有来宾都使用桌面版 VS Code 1.100.0+ 和已验证的 Live Share 1.1.122，从 [v0.22.19 Release](https://github.com/ChaosLights/vscode-leetcode/releases/tag/v0.22.19) 下载并在各自桌面版 VS Code 本地安装同一个 `vscode-leetcode-live-share-0.22.19.vsix`，不要把它安装到 Codespace 容器。
 2. 两端执行 `Developer: Reload Window`。
 3. 两端分别执行 `LeetCode: Sign In`，登录各自账号，并选择各自需要的 LeetCode endpoint。
 4. 主机开始可读写的 Live Share 会话，来宾打开主机分享的 LeetCode 题目文件。`@lc code=end` 下方空行的紧凑 `Submit · Test · Solution · Description` 是本地账号操作入口；两端应各自只看到一套，并且不应出现 `no commands`。若没有显示，请把 `editor.inlayHints.enabled` 设为 `"on"`，也可使用标题栏火箭或右键 `LeetCode` 菜单。来宾从 Explorer 创建题目时，由 Live Share 官方文件提供器按来宾权限写入 Codespace，不要求主持人逐次确认。
@@ -92,5 +92,6 @@ CLI HOME 隔离在该 VS Code Profile 的扩展 `globalStorage` 下；它不再�
 - 主机从桌面版 VS Code 连接 Codespace 时，题目文件位于云端 `/workspaces/...`，但 LeetCode 扩展、账号和 CLI 仍在主机本地运行；共享文档会临时物化到本地后再交给 CLI。
 - Live Share 官方文档说明来宾没有主机的本地文件系统，不能使用 Node `fs`；本 fork 没有使用 Node `fs`。它使用 VS Code 的 `workspace.fs`，由当前 Live Share 注册的 `vsls:` FileSystemProvider 处理，参见 [Virtual Workspaces](https://code.visualstudio.com/api/extension-guides/virtual-workspaces) 与 [Extensions and ecosystem support](https://learn.microsoft.com/en-us/visualstudio/liveshare/reference/extensions)。
 - v0.22.2 已用 VS Code 1.119 Extension Host 验证本地 CodeLens、`vscode-remote:`/`vsls:` 本地操作、footer 下一行第 0 列的紧凑排版、复制完整题目时仍绑定第一个代码块、删除副本和末尾换行后自动恢复动作空行、首次点击等待异步激活并自动执行、两种远程 scheme 都不再生成可转发的 LeetCode CodeLens、单套四操作、来宾 URI、重复点击和刷新，并继续覆盖新建、删除后重建、Live Share 正负缓存延迟、已有文件保护、符号链接拒绝和只读拒绝。自动配对还验证了 GitHub Issue 选主、关机 Codespace 的显式启动、通过官方 `vsls` 适配器取得 Live Share API，以及已开始主持但尚未发布邀请时的恢复。Live Share 已进入维护模式；若版本不同，升级后应重新做双机“无 `no commands`、首次点击有效、不重复且各自账号”验收。
+- v0.22.19 起，主持人始终复用 GitHub 仍保留的、最近使用的 Codespace，包括空闲超时后仍处于 `ShuttingDown` 的那台：扩展会等它停止完成后再启动，而不是从 `main` 新建一个空 Codespace，让未提交的题解和笔记看起来“丢失”。只有该仓库没有任何未删除的 Codespace 时才会新建；若最近使用的 Codespace 处于 `Failed`/`Unavailable`/`Archived` 等无法自动启动的状态，启动器直接报错，请先到 github.com/codespaces 恢复或在保存工作后删除它。
 - 本 fork 不再发送任何遥测，不上报 LeetCode 用户名、题号或本地/共享路径。启动日志只记录扩展、VS Code、Node、平台和工作区 URI scheme，不记录 Cookie 或 token。
 - VS Code 的 `extensionKind` 运行位置语义参见 [Extension Host](https://code.visualstudio.com/api/advanced-topics/extension-host)。
